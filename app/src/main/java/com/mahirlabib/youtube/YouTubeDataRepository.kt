@@ -121,6 +121,44 @@ object YouTubeDataRepository {
             result
         }
 
+
+    /**
+     * Searches YouTube's indexed public videos within each locally approved channel.
+     * Search API requests consume substantially more quota than listing uploads.
+     */
+    suspend fun searchChannelVideos(context: Context, apiKey: String, query: String): List<YouTubeVideo> =
+        withContext(Dispatchers.IO) {
+            require(apiKey.isNotBlank()) {
+                "YouTube Data API key is not configured. Add YOUTUBE_API_KEY as a GitHub Actions secret and rebuild."
+            }
+            val normalizedQuery = query.trim()
+            require(normalizedQuery.isNotBlank()) { "Enter a search term." }
+            val channels = ApprovedChannelStore.load(context)
+            if (channels.isEmpty()) return@withContext emptyList()
+
+            val results = mutableListOf<YouTubeVideo>()
+            for (channel in channels) {
+                val url = "https://www.googleapis.com/youtube/v3/search" +
+                    "?part=snippet&type=video&channelId=${encode(channel.channelId)}" +
+                    "&q=${encode(normalizedQuery)}&maxResults=25&order=relevance&key=${encode(apiKey)}"
+                val response = getJson(url)
+                val items = response.optJSONArray("items") ?: JSONArray()
+                for (i in 0 until items.length()) {
+                    val item = items.optJSONObject(i) ?: continue
+                    val id = item.optJSONObject("id")?.optString("videoId").orEmpty()
+                    if (!id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) continue
+                    val snippet = item.optJSONObject("snippet") ?: continue
+                    results += YouTubeVideo(
+                        videoId = id,
+                        title = snippet.optString("title", "YouTube video"),
+                        channelTitle = snippet.optString("channelTitle", channel.channelId),
+                        publishedAt = snippet.optString("publishedAt", "")
+                    )
+                }
+            }
+            results.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
+        }
+
     private fun getJson(url: String): JSONObject {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"

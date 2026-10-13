@@ -1,13 +1,15 @@
 package com.mahirlabib.youtube
 
 import android.annotation.SuppressLint
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.webkit.CookieManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
 
@@ -35,24 +37,46 @@ fun YouTubeEmbedPlayer(videoId: String, modifier: Modifier = Modifier) {
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webChromeClient = WebChromeClient()
-                // Let YouTube handle its player/CDN redirects; filtering navigation can block playback.
                 webViewClient = WebViewClient()
                 tag = videoId
-                // Load the official embed URL directly so WebView sends a normal HTTPS
-                // navigation/referrer instead of wrapping the player in generated HTML.
-                loadUrl(embedUrl(videoId))
+                loadPlayerHtml(videoId)
             }
         },
         update = { view ->
             val current = view.tag as? String
             if (current != videoId) {
                 view.tag = videoId
-                view.loadUrl(embedUrl(videoId))
+                view.loadPlayerHtml(videoId)
             }
         }
     )
 }
 
-
-private fun embedUrl(videoId: String): String =
-    "https://www.youtube.com/embed/$videoId?playsinline=1&rel=0&autoplay=0"
+private fun WebView.loadPlayerHtml(videoId: String) {
+    // Give the official player a real HTTPS base URL so its requests carry a
+    // Referer and an explicit origin, required by some YouTube player configurations.
+    val origin = "https://www.youtube.com"
+    val encodedOrigin = URLEncoder.encode(origin, StandardCharsets.UTF_8.name())
+    val html = """
+        <!doctype html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+          <style>
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+            iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+          </style>
+        </head>
+        <body>
+          <iframe
+            src="https://www.youtube.com/embed/$videoId?playsinline=1&amp;rel=0&amp;autoplay=0&amp;origin=$encodedOrigin"
+            title="YouTube video player"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen>
+          </iframe>
+        </body>
+        </html>
+    """.trimIndent()
+    loadDataWithBaseURL(origin, html, "text/html", "UTF-8", null)
+}

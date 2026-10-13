@@ -1,6 +1,6 @@
 # YouTube Android App
 
-A native Android application built with Kotlin and Jetpack Compose. The initial scaffold includes a home feed preview and bottom navigation for Home, Shorts preview, and Library.
+A native Android application built with Kotlin and Jetpack Compose. The initial app includes a home feed preview, bottom navigation, and a playback prototype using the official YouTube IFrame embed in an Android WebView.
 
 ## Requirements
 
@@ -12,17 +12,19 @@ A native Android application built with Kotlin and Jetpack Compose. The initial 
 
 Open this repository in Android Studio and allow Gradle to sync, then run the `:app` configuration on an Android device or emulator.
 
-A command-line build can be run from the repository root once the Gradle wrapper is added or Gradle is installed:
+If Gradle is installed locally, run:
 
 ```sh
 gradle :app:testDebugUnitTest :app:assembleDebug
 ```
 
+GitHub Actions is configured to run the unit tests and assemble a debug APK on pushes and pull requests to `main`.
+
 ## Roadmap
 
 - [x] Native Android/Compose app scaffold and bottom navigation
 - [x] Demo home feed screen
-- [ ] Official YouTube embedded-player prototype
+- [x] Official YouTube IFrame embed player prototype
 - [ ] Local watch history, continue watching, playlists, queue and mini-player
 - [ ] Admin-approved channel list and YouTube Data API integration
 - [ ] Real comments and authentication, subject to YouTube API policies
@@ -35,4 +37,4 @@ Playback behavior and controls such as captions, playback speed, quality selecti
 
 ## Current limitations
 
-The feed currently contains placeholder/demo data. The YouTube Data API, embedded player, authentication, and admin channel configuration are not wired up yet. The Android build has not been executed in this environment.
+The home feed currently uses demo/placeholder data; only the IFrame API sample video has a play action. The YouTube Data API, admin channel configuration, real comments, authentication, and local watch history are not implemented yet. The app build has not yet been confirmed successful by CI.

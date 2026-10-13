@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -35,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,8 +100,18 @@ private fun YouTubeApp() {
         activeVideoId = videoId
     }
 
-    MaterialTheme {
-        Scaffold(
+    val youtubeColors = lightColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFFFF0033),
+        onPrimary = androidx.compose.ui.graphics.Color.White,
+        secondary = androidx.compose.ui.graphics.Color(0xFF606060),
+        background = androidx.compose.ui.graphics.Color.White,
+        surface = androidx.compose.ui.graphics.Color.White,
+        onSurface = androidx.compose.ui.graphics.Color(0xFF0F0F0F),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFFF2F2F2),
+        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF606060)
+    )
+    MaterialTheme(colorScheme = youtubeColors) {
+        Scaffold(containerColor = androidx.compose.ui.graphics.Color.White,
             topBar = {
                 TopAppBar(
                     title = {
@@ -114,12 +127,12 @@ private fun YouTubeApp() {
                             },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("▶", color = MaterialTheme.colorScheme.error, fontSize = 24.sp)
-                            Text(" YouTube", fontWeight = FontWeight.Bold)
+                            Text("▶", color = androidx.compose.ui.graphics.Color.White, fontSize = 17.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
+                            Text("YouTube", color = androidx.compose.ui.graphics.Color(0xFF0F0F0F), fontWeight = FontWeight.Bold, fontSize = 21.sp)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                        containerColor = androidx.compose.ui.graphics.Color.White
                     )
                 )
             },
@@ -209,6 +222,17 @@ private fun YouTubeApp() {
     }
 }
 
+
+@Composable
+private fun VideoThumbnail(videoId: String, title: String, modifier: Modifier = Modifier) {
+    AsyncImage(
+        model = "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg",
+        contentDescription = title + " thumbnail",
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+    )
+}
+
 @Composable
 private fun HomeFeed(
     padding: PaddingValues,
@@ -230,12 +254,7 @@ private fun HomeFeed(
             items(approvedVideos, key = { it.videoId }) { video ->
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.padding(14.dp)) {
-                        Surface(modifier = Modifier.fillMaxWidth().height(174.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("▶", fontSize = 34.sp, color = MaterialTheme.colorScheme.error)
-                                Text("YOUTUBE VIDEO", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
+                        VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.fillMaxWidth().height(210.dp))
                         Spacer(Modifier.height(12.dp))
                         Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
@@ -249,8 +268,8 @@ private fun HomeFeed(
             items(demoVideos, key = { it.title }) { video ->
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.padding(14.dp)) {
-                        Surface(modifier = Modifier.fillMaxWidth().height(174.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (video.videoId != null) VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.fillMaxWidth().height(210.dp)) else Surface(modifier = Modifier.fillMaxWidth().height(210.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text("▶", fontSize = 34.sp, color = MaterialTheme.colorScheme.error)
                                 Text(video.duration, style = MaterialTheme.typography.labelSmall)
                             }
@@ -288,11 +307,14 @@ private fun SearchFeed(
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(filtered, key = { it.videoId }) { video ->
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                        Column(Modifier.padding(14.dp)) {
-                            Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                            Text(video.channelTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(8.dp))
-                            Button(onClick = { onPlay(video) }) { Text("Play video") }
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.weight(1f).height(88.dp))
+                            Column(Modifier.weight(1.4f)) {
+                                Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 3)
+                                Spacer(Modifier.height(4.dp))
+                                Text(video.channelTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                                TextButton(onClick = { onPlay(video) }) { Text("Watch") }
+                            }
                         }
                     }
                 }

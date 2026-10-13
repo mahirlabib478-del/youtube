@@ -33,10 +33,10 @@ object ApprovedChannelStore {
             .getString(KEY, "[]") ?: "[]"
         return runCatching {
             val array = JSONArray(raw)
-            buildList {
+            buildList<ApprovedChannel> {
                 for (i in 0 until array.length()) {
                     val id = array.optString(i)
-                    if (isValidYouTubeChannelId(id) && none { it.channelId == id }) {
+                    if (isValidYouTubeChannelId(id) && none { channel -> channel.channelId == id }) {
                         add(ApprovedChannel(id))
                     }
                 }

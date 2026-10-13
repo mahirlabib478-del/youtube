@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,16 +69,24 @@ private val demoVideos = listOf(
         "A playback prototype using the official YouTube embedded player.",
         videoId = "M7lc1UVf-VE"
     ),
-    VideoCardData("Build your own watchlist", "Product preview", "PLANNED", "Save videos and continue watching will be added in a later milestone."),
+    VideoCardData("Build your own watchlist", "Product preview", "PLANNED", "Playlist support will be added in a later milestone."),
     VideoCardData("Videos from approved channels", "Channel feed", "PLANNED", "The admin-managed channel list and YouTube Data API are not connected yet.")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun YouTubeApp() {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var activeVideoId by remember { mutableStateOf<String?>(null) }
+    var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     val tabs = listOf("Home", "Shorts", "Library")
+
+    fun playVideo(videoId: String, title: String, channel: String) {
+        history = WatchHistoryStore.record(context, videoId, title, channel)
+        activeVideoId = videoId
+    }
+
     MaterialTheme {
         Scaffold(
             topBar = {
@@ -122,16 +131,22 @@ private fun YouTubeApp() {
                     padding = padding,
                     onClose = { activeVideoId = null }
                 )
-                selectedTab == 0 -> HomeFeed(padding) { videoId -> activeVideoId = videoId }
+                selectedTab == 0 -> HomeFeed(padding) { video ->
+                    video.videoId?.let { playVideo(it, video.title, video.channel) }
+                }
                 selectedTab == 1 -> PlaceholderScreen(
                     "Shorts-style feed",
                     "Vertical video feed is planned. Playback will use official YouTube embeds and must follow YouTube's player rules.",
                     padding
                 )
-                else -> PlaceholderScreen(
-                    "Your library",
-                    "Watch history, playlists, queue and continue watching are planned for the next milestone.",
-                    padding
+                else -> LibraryScreen(
+                    history = history,
+                    padding = padding,
+                    onPlay = { item -> playVideo(item.videoId, item.title, item.channel) },
+                    onClear = {
+                        WatchHistoryStore.clear(context)
+                        history = emptyList()
+                    }
                 )
             }
         }
@@ -139,7 +154,7 @@ private fun YouTubeApp() {
 }
 
 @Composable
-private fun HomeFeed(padding: PaddingValues, onPlay: (String) -> Unit) {
+private fun HomeFeed(padding: PaddingValues, onPlay: (VideoCardData) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp),
@@ -183,9 +198,77 @@ private fun HomeFeed(padding: PaddingValues, onPlay: (String) -> Unit) {
                     Text(video.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (video.videoId != null) {
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { onPlay(video.videoId) }) {
+                        Button(onClick = { onPlay(video) }) {
                             Text("Play demo")
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(
+    history: List<WatchedVideo>,
+    padding: PaddingValues,
+    onPlay: (WatchedVideo) -> Unit,
+    onClear: () -> Unit
+) {
+    if (history.isEmpty()) {
+        PlaceholderScreen(
+            "Your library",
+            "Videos you open will appear here as watch history. History is saved locally on this device.",
+            padding
+        )
+        return
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("Watch history", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text("${history.size} recently opened video(s)", style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = onClear) { Text("Clear") }
+            }
+        }
+        items(history, key = { it.videoId }) { video ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.height(64.dp).weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) { Text("▶", color = MaterialTheme.colorScheme.error, fontSize = 24.sp) }
+                    }
+                    Column(modifier = Modifier.weight(2f)) {
+                        Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(video.channel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(6.dp))
+                        Button(onClick = { onPlay(video) }) { Text("Watch again") }
                     }
                 }
             }

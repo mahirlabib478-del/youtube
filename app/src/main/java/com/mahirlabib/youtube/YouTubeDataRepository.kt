@@ -116,7 +116,9 @@ object YouTubeDataRepository {
                     }
                 }
             }
-            videos.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
+            val result = videos.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
+            LocalVideoStore.save(context, result)
+            result
         }
 
     private fun getJson(url: String): JSONObject {
@@ -142,4 +144,44 @@ object YouTubeDataRepository {
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+}
+
+/** Persists public video metadata for offline browsing of the local channel list. */
+object LocalVideoStore {
+    private const val PREFS = "youtube_local_library"
+    private const val KEY = "approved_channel_video_cache"
+
+    fun load(context: Context): List<YouTubeVideo> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY, "[]") ?: "[]"
+        return runCatching {
+            val array = JSONArray(raw)
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val id = item.optString("videoId")
+                    if (!id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) continue
+                    add(YouTubeVideo(
+                        videoId = id,
+                        title = item.optString("title", "YouTube video"),
+                        channelTitle = item.optString("channelTitle", "Unknown channel"),
+                        publishedAt = item.optString("publishedAt", "")
+                    ))
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun save(context: Context, videos: List<YouTubeVideo>) {
+        val array = JSONArray()
+        videos.distinctBy { it.videoId }.take(500).forEach { video ->
+            array.put(JSONObject()
+                .put("videoId", video.videoId)
+                .put("title", video.title)
+                .put("channelTitle", video.channelTitle)
+                .put("publishedAt", video.publishedAt))
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, array.toString()).apply()
+    }
 }

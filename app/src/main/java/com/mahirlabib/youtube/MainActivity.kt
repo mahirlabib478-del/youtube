@@ -88,6 +88,8 @@ private fun YouTubeApp() {
     var adminLoggedIn by remember { mutableStateOf(false) }
     var activeVideoId by remember { mutableStateOf<String?>(null) }
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
+    var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
+    var searchQuery by remember { mutableStateOf("") }
     val tabs = listOf("Home", "Shorts", "Library", "Search")
 
     fun playVideo(videoId: String, title: String, channel: String) {
@@ -164,18 +166,23 @@ private fun YouTubeApp() {
                         Text("Local Admin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         TextButton(onClick = { adminLoggedIn = false }) { Text("Logout") }
                     }
-                    ChannelManagerScreen(padding = PaddingValues(0.dp)) { video ->
-                        playVideo(video.videoId, video.title, video.channelTitle)
-                    }
+                    ChannelManagerScreen(
+                        padding = PaddingValues(0.dp),
+                        onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle) },
+                        onVideosLoaded = { approvedVideos = it }
+                    )
                 }
                 activeVideoId != null -> PlayerScreen(
                     videoId = activeVideoId!!,
                     padding = padding,
                     onClose = { activeVideoId = null }
                 )
-                selectedTab == 0 -> HomeFeed(padding) { video ->
-                    video.videoId?.let { playVideo(it, video.title, video.channel) }
-                }
+                selectedTab == 0 -> HomeFeed(
+                    padding = padding,
+                    approvedVideos = approvedVideos,
+                    onPlayApproved = { video -> playVideo(video.videoId, video.title, video.channelTitle) },
+                    onPlayDemo = { video -> video.videoId?.let { playVideo(it, video.title, video.channel) } }
+                )
                 selectedTab == 1 -> PlaceholderScreen(
                     "Shorts-style feed",
                     "Vertical video feed is planned. Playback will use official YouTube embeds and must follow YouTube's player rules.",
@@ -190,10 +197,12 @@ private fun YouTubeApp() {
                         history = emptyList()
                     }
                 )
-                else -> PlaceholderScreen(
-                    "Search",
-                    "Search across locally saved, approved-channel videos will be added with the channel feed index.",
-                    padding
+                else -> SearchFeed(
+                    padding = padding,
+                    videos = approvedVideos,
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle) }
                 )
             }
         }
@@ -201,7 +210,12 @@ private fun YouTubeApp() {
 }
 
 @Composable
-private fun HomeFeed(padding: PaddingValues, onPlay: (VideoCardData) -> Unit) {
+private fun HomeFeed(
+    padding: PaddingValues,
+    approvedVideos: List<YouTubeVideo>,
+    onPlayApproved: (YouTubeVideo) -> Unit,
+    onPlayDemo: (VideoCardData) -> Unit
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp),
@@ -210,42 +224,76 @@ private fun HomeFeed(padding: PaddingValues, onPlay: (VideoCardData) -> Unit) {
         item {
             Text("Explore", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text(
-                "Playback prototype · open Channels to load videos from channel IDs",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text(if (approvedVideos.isEmpty()) "Add channels in hidden Local Admin, then load their latest public uploads." else "Latest videos from your saved channels", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        items(demoVideos) { video ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().height(174.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize().padding(12.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text("▶", fontSize = 34.sp, color = MaterialTheme.colorScheme.error)
-                            Text(video.duration, style = MaterialTheme.typography.labelSmall)
+        if (approvedVideos.isNotEmpty()) {
+            items(approvedVideos, key = { it.videoId }) { video ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Surface(modifier = Modifier.fillMaxWidth().height(174.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("▶", fontSize = 34.sp, color = MaterialTheme.colorScheme.error)
+                                Text("YOUTUBE VIDEO", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(4.dp))
-                    Text(video.channel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(4.dp))
-                    Text(video.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (video.videoId != null) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(video.channelTitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(8.dp))
-                        Button(onClick = { onPlay(video) }) { Text("Play demo") }
+                        Button(onClick = { onPlayApproved(video) }) { Text("Play video") }
+                    }
+                }
+            }
+        } else {
+            items(demoVideos, key = { it.title }) { video ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                    Column(Modifier.padding(14.dp)) {
+                        Surface(modifier = Modifier.fillMaxWidth().height(174.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("▶", fontSize = 34.sp, color = MaterialTheme.colorScheme.error)
+                                Text(video.duration, style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(video.channel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Text(video.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (video.videoId != null) { Spacer(Modifier.height(8.dp)); Button(onClick = { onPlayDemo(video) }) { Text("Play demo") } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchFeed(
+    padding: PaddingValues,
+    videos: List<YouTubeVideo>,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onPlay: (YouTubeVideo) -> Unit
+) {
+    val filtered = videos.filter { it.title.contains(query, ignoreCase = true) || it.channelTitle.contains(query, ignoreCase = true) }
+    Column(Modifier.fillMaxSize().padding(padding)) {
+        OutlinedTextField(value = query, onValueChange = onQueryChange, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), label = { Text("Search approved-channel videos") }, singleLine = true)
+        if (filtered.isEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (videos.isEmpty()) "No channel videos saved yet. Tap the YouTube logo 7 times to open Local Admin, then load videos." else "No videos match your search.")
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(filtered, key = { it.videoId }) { video ->
+                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            Text(video.channelTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { onPlay(video) }) { Text("Play video") }
+                        }
                     }
                 }
             }
@@ -256,13 +304,14 @@ private fun HomeFeed(padding: PaddingValues, onPlay: (VideoCardData) -> Unit) {
 @Composable
 private fun ChannelManagerScreen(
     padding: PaddingValues,
-    onPlay: (YouTubeVideo) -> Unit
+    onPlay: (YouTubeVideo) -> Unit,
+    onVideosLoaded: (List<YouTubeVideo>) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var channelId by remember { mutableStateOf("") }
     var channels by remember { mutableStateOf(ApprovedChannelStore.load(context)) }
-    var videos by remember { mutableStateOf(emptyList<YouTubeVideo>()) }
+    var videos by remember { mutableStateOf(LocalVideoStore.load(context)) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("Add YouTube channel IDs, then load their latest public uploads.") }
 
@@ -310,6 +359,7 @@ private fun ChannelManagerScreen(
                         runCatching { YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY) }
                             .onSuccess {
                                 videos = it
+                                onVideosLoaded(it)
                                 message = if (it.isEmpty()) "No public uploads found for these channels." else "Loaded ${it.size} videos."
                             }
                             .onFailure { message = it.message ?: "Could not load videos." }
@@ -338,6 +388,8 @@ private fun ChannelManagerScreen(
                     TextButton(onClick = {
                         channels = ApprovedChannelStore.remove(context, channel.channelId)
                         videos = emptyList()
+                        LocalVideoStore.save(context, emptyList())
+                        onVideosLoaded(emptyList())
                     }) { Text("Remove") }
                 }
             }

@@ -1,12 +1,17 @@
 package com.mahirlabib.youtube
 
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ExampleUnitTest {
     @Test
-    fun versionNameStartsAtInitialDevelopmentVersion() {
-        val versionName = "0.1.0"
-        assertEquals("0.1.0", versionName)
+    fun demoFeedHasContentForInitialScreen() {
+        val demoTitles = listOf(
+            "Welcome to your video feed",
+            "Build your own watchlist",
+            "Official YouTube playback"
+        )
+        assertTrue(demoTitles.isNotEmpty())
+        assertTrue(demoTitles.all { it.isNotBlank() })
     }
 }

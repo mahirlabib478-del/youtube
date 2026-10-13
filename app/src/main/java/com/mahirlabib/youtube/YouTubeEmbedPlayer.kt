@@ -1,12 +1,10 @@
 package com.mahirlabib.youtube
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.CookieManager
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -34,35 +32,12 @@ fun YouTubeEmbedPlayer(videoId: String, modifier: Modifier = Modifier) {
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.setSupportMultipleWindows(false)
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webChromeClient = WebChromeClient()
-                webViewClient = object : WebViewClient() {
-                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                        super.onPageStarted(view, url, favicon)
-                    }
-
-                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                        val url = request?.url ?: return false
-                        return !(url.scheme == "https" && (
-                            url.host == "www.youtube.com" ||
-                            url.host == "youtube.com" ||
-                            url.host == "www.youtube-nocookie.com" ||
-                            url.host == "googlevideo.com" ||
-                            url.host?.endsWith(".googlevideo.com") == true ||
-                            url.host == "www.google.com" ||
-                            url.host?.endsWith(".youtube.com") == true ||
-                            url.host?.endsWith(".ytimg.com") == true ||
-                            url.host?.endsWith(".google.com") == true
-                        ))
-                    }
-
-                    override fun onReceivedError(
-                        view: WebView?,
-                        request: WebResourceRequest?,
-                        error: WebResourceError?
-                    ) {
-                        super.onReceivedError(view, request, error)
-                    }
-                }
+                // Let YouTube handle its player/CDN redirects; filtering navigation can block playback.
+                webViewClient = WebViewClient()
+                tag = videoId
                 loadDataWithBaseURL(
                     "https://www.youtube.com/",
                     buildEmbedHtml(videoId),

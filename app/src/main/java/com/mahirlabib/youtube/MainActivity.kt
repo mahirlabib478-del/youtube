@@ -634,10 +634,10 @@ private fun PlayerScreen(
         }
         YouTubeEmbedPlayer(
             videoId = videoId,
-            modifier = Modifier.fillMaxWidth().height(240.dp)
+            modifier = Modifier.fillMaxWidth().height(300.dp)
         )
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

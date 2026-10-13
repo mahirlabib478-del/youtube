@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -81,9 +82,12 @@ private val demoVideos = listOf(
 private fun YouTubeApp() {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var logoTapCount by remember { mutableIntStateOf(0) }
+    var showAdminGate by remember { mutableStateOf(false) }
+    var adminLoggedIn by remember { mutableStateOf(false) }
     var activeVideoId by remember { mutableStateOf<String?>(null) }
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
-    val tabs = listOf("Home", "Shorts", "Library", "Channels")
+    val tabs = listOf("Home", "Shorts", "Library", "Search")
 
     fun playVideo(videoId: String, title: String, channel: String) {
         history = WatchHistoryStore.record(context, videoId, title, channel)
@@ -95,7 +99,16 @@ private fun YouTubeApp() {
             topBar = {
                 TopAppBar(
                     title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.clickable {
+                                logoTapCount += 1
+                                if (logoTapCount >= 7) {
+                                    logoTapCount = 0
+                                    showAdminGate = true
+                                }
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text("▶", color = MaterialTheme.colorScheme.error, fontSize = 24.sp)
                             Text(" YouTube", fontWeight = FontWeight.Bold)
                         }
@@ -135,6 +148,23 @@ private fun YouTubeApp() {
             }
         ) { padding ->
             when {
+                showAdminGate -> AdminGateScreen(
+                    onSuccess = { showAdminGate = false; adminLoggedIn = true },
+                    onCancel = { showAdminGate = false }
+                )
+                adminLoggedIn -> Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Local Admin", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { adminLoggedIn = false }) { Text("Logout") }
+                    }
+                    ChannelManagerScreen(padding = PaddingValues(0.dp)) { video ->
+                        playVideo(video.videoId, video.title, video.channelTitle)
+                    }
+                }
                 activeVideoId != null -> PlayerScreen(
                     videoId = activeVideoId!!,
                     padding = padding,
@@ -157,9 +187,11 @@ private fun YouTubeApp() {
                         history = emptyList()
                     }
                 )
-                else -> ChannelManagerScreen(padding = padding) { video ->
-                    playVideo(video.videoId, video.title, video.channelTitle)
-                }
+                else -> PlaceholderScreen(
+                    "Search",
+                    "Search across locally saved, approved-channel videos will be added with the channel feed index.",
+                    padding
+                )
             }
         }
     }

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -29,11 +30,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,19 +56,27 @@ private data class VideoCardData(
     val title: String,
     val channel: String,
     val duration: String,
-    val description: String
+    val description: String,
+    val videoId: String? = null
 )
 
 private val demoVideos = listOf(
-    VideoCardData("Welcome to your video feed", "YouTube Android", "SETUP", "Your approved channels will appear here after API setup."),
-    VideoCardData("Build your own watchlist", "Product preview", "GUIDE", "Save videos and continue watching as the next milestone."),
-    VideoCardData("Official YouTube playback", "Platform notes", "INFO", "Playback will use the official embedded player.")
+    VideoCardData(
+        "YouTube IFrame API sample",
+        "YouTube Developers",
+        "DEMO",
+        "A playback prototype using the official YouTube embedded player.",
+        videoId = "M7lc1UVf-VE"
+    ),
+    VideoCardData("Build your own watchlist", "Product preview", "PLANNED", "Save videos and continue watching will be added in a later milestone."),
+    VideoCardData("Videos from approved channels", "Channel feed", "PLANNED", "The admin-managed channel list and YouTube Data API are not connected yet.")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun YouTubeApp() {
     var selectedTab by remember { mutableIntStateOf(0) }
+    var activeVideoId by remember { mutableStateOf<String?>(null) }
     val tabs = listOf("Home", "Shorts", "Library")
     MaterialTheme {
         Scaffold(
@@ -86,36 +97,49 @@ private fun YouTubeApp() {
                 NavigationBar {
                     NavigationBarItem(
                         selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
+                        onClick = { selectedTab = 0; activeVideoId = null },
                         icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                         label = { Text(tabs[0]) }
                     )
                     NavigationBarItem(
                         selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
+                        onClick = { selectedTab = 1; activeVideoId = null },
                         icon = { Icon(Icons.Default.Search, contentDescription = "Shorts preview") },
                         label = { Text(tabs[1]) }
                     )
                     NavigationBarItem(
                         selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
+                        onClick = { selectedTab = 2; activeVideoId = null },
                         icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Library") },
                         label = { Text(tabs[2]) }
                     )
                 }
             }
         ) { padding ->
-            when (selectedTab) {
-                0 -> HomeFeed(padding)
-                1 -> PlaceholderScreen("Shorts-style feed", "Vertical feed is planned; video playback must remain compliant with YouTube's embedded-player rules.", padding)
-                else -> PlaceholderScreen("Your library", "Watch history, playlists and continue watching are planned for the next milestone.", padding)
+            when {
+                activeVideoId != null -> PlayerScreen(
+                    videoId = activeVideoId!!,
+                    padding = padding,
+                    onClose = { activeVideoId = null }
+                )
+                selectedTab == 0 -> HomeFeed(padding) { videoId -> activeVideoId = videoId }
+                selectedTab == 1 -> PlaceholderScreen(
+                    "Shorts-style feed",
+                    "Vertical video feed is planned. Playback will use official YouTube embeds and must follow YouTube's player rules.",
+                    padding
+                )
+                else -> PlaceholderScreen(
+                    "Your library",
+                    "Watch history, playlists, queue and continue watching are planned for the next milestone.",
+                    padding
+                )
             }
         }
     }
 }
 
 @Composable
-private fun HomeFeed(padding: PaddingValues) {
+private fun HomeFeed(padding: PaddingValues, onPlay: (String) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp),
@@ -124,7 +148,11 @@ private fun HomeFeed(padding: PaddingValues) {
         item {
             Text("Explore", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
-            Text("Videos from channels selected by your administrator", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "Playback prototype · channel API integration is next",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
         items(demoVideos) { video ->
             Card(
@@ -153,8 +181,39 @@ private fun HomeFeed(padding: PaddingValues) {
                     Text(video.channel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(4.dp))
                     Text(video.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (video.videoId != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { onPlay(video.videoId) }) {
+                            Text("Play demo")
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerScreen(videoId: String, padding: PaddingValues, onClose: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        verticalArrangement = Arrangement.Top
+    ) {
+        TextButton(onClick = onClose, modifier = Modifier.padding(start = 8.dp)) {
+            Text("← Back to feed")
+        }
+        YouTubeEmbedPlayer(
+            videoId = videoId,
+            modifier = Modifier.fillMaxWidth().height(240.dp)
+        )
+        Column(Modifier.padding(16.dp)) {
+            Text("Official YouTube player", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Playback controls and availability are provided by YouTube. This is a prototype video, not yet the admin-approved channel feed.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

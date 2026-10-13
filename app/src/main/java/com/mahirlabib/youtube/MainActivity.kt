@@ -83,6 +83,7 @@ private fun YouTubeApp() {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     var logoTapCount by remember { mutableIntStateOf(0) }
+    var lastLogoTapAt by remember { mutableStateOf(0L) }
     var showAdminGate by remember { mutableStateOf(false) }
     var adminLoggedIn by remember { mutableStateOf(false) }
     var activeVideoId by remember { mutableStateOf<String?>(null) }
@@ -101,7 +102,9 @@ private fun YouTubeApp() {
                     title = {
                         Row(
                             modifier = Modifier.clickable {
-                                logoTapCount += 1
+                                val now = System.currentTimeMillis()
+                                logoTapCount = if (now - lastLogoTapAt <= 1_500L) logoTapCount + 1 else 1
+                                lastLogoTapAt = now
                                 if (logoTapCount >= 7) {
                                     logoTapCount = 0
                                     showAdminGate = true

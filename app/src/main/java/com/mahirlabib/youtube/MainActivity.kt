@@ -1,9 +1,12 @@
 package com.mahirlabib.youtube
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -96,6 +99,8 @@ private fun YouTubeApp() {
     var showAdminGate by remember { mutableStateOf(false) }
     var adminLoggedIn by remember { mutableStateOf(false) }
     var activeVideoId by remember { mutableStateOf<String?>(null) }
+    var activeVideoTitle by remember { mutableStateOf("") }
+    var activeVideoChannel by remember { mutableStateOf("") }
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
     var searchQuery by remember { mutableStateOf("") }
@@ -103,6 +108,8 @@ private fun YouTubeApp() {
 
     fun playVideo(videoId: String, title: String, channel: String) {
         history = WatchHistoryStore.record(context, videoId, title, channel)
+        activeVideoTitle = title
+        activeVideoChannel = channel
         activeVideoId = videoId
     }
 
@@ -203,6 +210,8 @@ private fun YouTubeApp() {
                 }
                 activeVideoId != null -> PlayerScreen(
                     videoId = activeVideoId!!,
+                    title = activeVideoTitle,
+                    channel = activeVideoChannel,
                     padding = padding,
                     onClose = { activeVideoId = null }
                 )
@@ -603,7 +612,15 @@ private fun LibraryScreen(
 }
 
 @Composable
-private fun PlayerScreen(videoId: String, padding: PaddingValues, onClose: () -> Unit) {
+private fun PlayerScreen(
+    videoId: String,
+    title: String,
+    channel: String,
+    padding: PaddingValues,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    var descriptionExpanded by remember(videoId) { mutableStateOf(false) }
     Column(
         modifier = Modifier.fillMaxSize().padding(padding),
         verticalArrangement = Arrangement.Top
@@ -615,14 +632,68 @@ private fun PlayerScreen(videoId: String, padding: PaddingValues, onClose: () ->
             videoId = videoId,
             modifier = Modifier.fillMaxWidth().height(240.dp)
         )
-        Column(Modifier.padding(16.dp)) {
-            Text("Official YouTube player", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "Playback controls and availability are provided by YouTube. Videos are played using YouTube's embedded player.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text(title.ifBlank { "YouTube video" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(channel, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.OutlinedButton(onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+                        runCatching { context.startActivity(intent) }
+                    }) { Text("👍 Like") }
+                    androidx.compose.material3.OutlinedButton(onClick = {
+                        val intent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "https://www.youtube.com/watch?v=$videoId")
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Share video"))
+                    }) { Text("↗ Share") }
+                    androidx.compose.material3.OutlinedButton(onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+                        runCatching { context.startActivity(intent) }
+                    }) { Text("Comments") }
+                }
+            }
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { descriptionExpanded = !descriptionExpanded },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(if (descriptionExpanded) "Description  ▲" else "Description  ▼", fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            if (descriptionExpanded)
+                                "This video is played through YouTube's official embedded player. Full video description, likes and comments are provided by YouTube. Use the buttons above to open the video in YouTube for account actions and the full comment thread."
+                            else "Show video details",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            item {
+                Text("Comments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Comments are hosted by YouTube. Tap Comments to view the real comment thread and participate with your YouTube account.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                TextButton(onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+                    runCatching { context.startActivity(intent) }
+                }) { Text("View comments on YouTube") }
+            }
         }
     }
 }

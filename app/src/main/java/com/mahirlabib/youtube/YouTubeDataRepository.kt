@@ -21,10 +21,12 @@ data class YouTubeVideo(
     val publishedAt: String
 )
 
+internal fun isValidYouTubeChannelId(value: String): Boolean =
+    Regex("^UC[A-Za-z0-9_-]{22}$").matches(value.trim())
+
 object ApprovedChannelStore {
     private const val PREFS = "youtube_local_library"
     private const val KEY = "approved_channel_ids"
-    private val channelIdPattern = Regex("^UC[A-Za-z0-9_-]{22}$")
 
     fun load(context: Context): List<ApprovedChannel> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -34,7 +36,7 @@ object ApprovedChannelStore {
             buildList {
                 for (i in 0 until array.length()) {
                     val id = array.optString(i)
-                    if (channelIdPattern.matches(id) && none { it.channelId == id }) {
+                    if (isValidYouTubeChannelId(id) && none { it.channelId == id }) {
                         add(ApprovedChannel(id))
                     }
                 }
@@ -44,11 +46,13 @@ object ApprovedChannelStore {
 
     fun add(context: Context, channelId: String): List<ApprovedChannel> {
         val normalized = channelId.trim()
-        require(channelIdPattern.matches(normalized)) {
+        require(isValidYouTubeChannelId(normalized)) {
             "Enter a valid YouTube channel ID (starts with UC and has 24 characters)."
         }
-        val updated = (load(context).filterNot { it.channelId == normalized } +
-            ApprovedChannel(normalized)).take(100)
+        val existing = load(context)
+        if (existing.any { it.channelId == normalized }) return existing
+        require(existing.size < 100) { "You can save up to 100 channel IDs on this device." }
+        val updated = existing + ApprovedChannel(normalized)
         save(context, updated)
         return updated
     }
@@ -72,51 +76,47 @@ object YouTubeDataRepository {
     suspend fun latestVideos(context: Context, apiKey: String): List<YouTubeVideo> =
         withContext(Dispatchers.IO) {
             require(apiKey.isNotBlank()) {
-                "YouTube Data API key is not configured. Set YOUTUBE_API_KEY in GitHub Actions secrets or local Gradle properties."
+                "YouTube Data API key is not configured. Add YOUTUBE_API_KEY as a GitHub Actions secret and rebuild."
             }
             val channels = ApprovedChannelStore.load(context)
             if (channels.isEmpty()) return@withContext emptyList()
 
-            channels.flatMap { channel ->
-                runCatching {
-                    val channelJson = getJson(
-                        "https://www.googleapis.com/youtube/v3/channels" +
-                            "?part=contentDetails,snippet&id=${encode(channel.channelId)}&key=${encode(apiKey)}"
-                    )
-                    val channelItems = channelJson.optJSONArray("items") ?: JSONArray()
-                    if (channelItems.length() == 0) return@runCatching emptyList()
-                    val channelItem = channelItems.getJSONObject(0)
-                    val channelTitle = channelItem.optJSONObject("snippet")
-                        ?.optString("title").orEmpty().ifBlank { channel.channelId }
-                    val uploadsId = channelItem.optJSONObject("contentDetails")
-                        ?.optJSONObject("relatedPlaylists")
-                        ?.optString("uploads").orEmpty()
-                    if (uploadsId.isBlank()) return@runCatching emptyList()
+            val videos = mutableListOf<YouTubeVideo>()
+            for (channel in channels) {
+                val channelJson = getJson(
+                    "https://www.googleapis.com/youtube/v3/channels" +
+                        "?part=contentDetails,snippet&id=${encode(channel.channelId)}&key=${encode(apiKey)}"
+                )
+                val channelItems = channelJson.optJSONArray("items") ?: JSONArray()
+                if (channelItems.length() == 0) continue
+                val channelItem = channelItems.getJSONObject(0)
+                val channelTitle = channelItem.optJSONObject("snippet")
+                    ?.optString("title").orEmpty().ifBlank { channel.channelId }
+                val uploadsId = channelItem.optJSONObject("contentDetails")
+                    ?.optJSONObject("relatedPlaylists")
+                    ?.optString("uploads").orEmpty()
+                if (uploadsId.isBlank()) continue
 
-                    val playlistJson = getJson(
-                        "https://www.googleapis.com/youtube/v3/playlistItems" +
-                            "?part=snippet&playlistId=${encode(uploadsId)}&maxResults=10&key=${encode(apiKey)}"
-                    )
-                    val items = playlistJson.optJSONArray("items") ?: JSONArray()
-                    buildList {
-                        for (i in 0 until items.length()) {
-                            val snippet = items.optJSONObject(i)?.optJSONObject("snippet") ?: continue
-                            val resource = snippet.optJSONObject("resourceId") ?: continue
-                            val id = resource.optString("videoId")
-                            if (id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) {
-                                add(
-                                    YouTubeVideo(
-                                        videoId = id,
-                                        title = snippet.optString("title", "YouTube video"),
-                                        channelTitle = channelTitle,
-                                        publishedAt = snippet.optString("publishedAt", "")
-                                    )
-                                )
-                            }
-                        }
+                val playlistJson = getJson(
+                    "https://www.googleapis.com/youtube/v3/playlistItems" +
+                        "?part=snippet&playlistId=${encode(uploadsId)}&maxResults=10&key=${encode(apiKey)}"
+                )
+                val items = playlistJson.optJSONArray("items") ?: JSONArray()
+                for (i in 0 until items.length()) {
+                    val snippet = items.optJSONObject(i)?.optJSONObject("snippet") ?: continue
+                    val resource = snippet.optJSONObject("resourceId") ?: continue
+                    val id = resource.optString("videoId")
+                    if (id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) {
+                        videos += YouTubeVideo(
+                            videoId = id,
+                            title = snippet.optString("title", "YouTube video"),
+                            channelTitle = channelTitle,
+                            publishedAt = snippet.optString("publishedAt", "")
+                        )
                     }
-                }.getOrElse { emptyList() }
-            }.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
+                }
+            }
+            videos.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
         }
 
     private fun getJson(url: String): JSONObject {

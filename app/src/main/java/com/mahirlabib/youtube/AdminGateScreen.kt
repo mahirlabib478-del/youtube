@@ -29,7 +29,7 @@ fun AdminGateScreen(onSuccess: () -> Unit, onCancel: () -> Unit) {
         Button(onClick = {
             if (configured) {
                 if (LocalAdminStore.verifyPin(context, pin)) onSuccess() else message = "Incorrect PIN"
-            } else if (!pin.matches(Regex("^\\\\d{6,12}$"))) {
+            } else if (!pin.matches(Regex("^\\d{6,12}$"))) {
                 message = "PIN must contain 6–12 digits"
             } else if (pin != confirm) {
                 message = "PINs do not match"

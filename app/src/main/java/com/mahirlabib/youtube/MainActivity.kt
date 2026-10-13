@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.LaunchedEffect
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -625,6 +626,23 @@ private fun PlayerScreen(
 ) {
     val context = LocalContext.current
     var descriptionExpanded by remember(videoId) { mutableStateOf(false) }
+    var comments by remember(videoId) { mutableStateOf<List<YouTubeComment>>(emptyList()) }
+    var commentsLoading by remember(videoId) { mutableStateOf(true) }
+    var commentsMessage by remember(videoId) { mutableStateOf("Loading public comments…") }
+    LaunchedEffect(videoId) {
+        commentsLoading = true
+        commentsMessage = "Loading public comments…"
+        runCatching { YouTubeDataRepository.publicComments(videoId, BuildConfig.YOUTUBE_API_KEY) }
+            .onSuccess {
+                comments = it
+                commentsMessage = if (it.isEmpty()) "No public comments available. Comments may be disabled for this video." else ""
+            }
+            .onFailure {
+                comments = emptyList()
+                commentsMessage = it.message ?: "Could not load comments. Open YouTube to view the discussion."
+            }
+        commentsLoading = false
+    }
     Column(
         modifier = Modifier.fillMaxSize().padding(padding),
         verticalArrangement = Arrangement.Top
@@ -636,6 +654,13 @@ private fun PlayerScreen(
             videoId = videoId,
             modifier = Modifier.fillMaxWidth().height(340.dp)
         )
+        TextButton(
+            onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
+                runCatching { context.startActivity(intent) }
+            },
+            modifier = Modifier.align(Alignment.End).padding(end = 8.dp)
+        ) { Text("Player not working? Open on YouTube") }
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
@@ -689,14 +714,22 @@ private fun PlayerScreen(
             item {
                 Text("Comments", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                    "Comments are hosted by YouTube. Tap Comments to view the real comment thread and participate with your YouTube account.",
+                    if (commentsLoading) "Loading public comments…"
+                    else commentsMessage,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                comments.forEach { comment ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text(comment.author, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(3.dp))
+                        Text(comment.text, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
                 TextButton(onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
                     runCatching { context.startActivity(intent) }
-                }) { Text("View comments on YouTube") }
+                }) { Text("Open full comments on YouTube") }
             }
         }
     }

@@ -4,6 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val youtubeApiKey = providers.gradleProperty("YOUTUBE_API_KEY")
+    .orElse(providers.environmentVariable("YOUTUBE_API_KEY"))
+    .getOrElse("")
+
 android {
     namespace = "com.mahirlabib.youtube"
     compileSdk = 35
@@ -12,12 +16,16 @@ android {
         applicationId = "com.mahirlabib.youtube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "YOUTUBE_API_KEY", "\"$youtubeApiKey\"")
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

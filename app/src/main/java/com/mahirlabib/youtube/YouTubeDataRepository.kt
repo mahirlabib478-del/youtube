@@ -73,6 +73,12 @@ object ApprovedChannelStore {
 }
 
 /** Uses the official YouTube Data API v3; API key is supplied at build time, never hard-coded. */
+data class YouTubeComment(
+    val author: String,
+    val text: String,
+    val publishedAt: String
+)
+
 object YouTubeDataRepository {
     suspend fun latestVideos(context: Context, apiKey: String): List<YouTubeVideo> =
         withContext(Dispatchers.IO) {
@@ -160,6 +166,28 @@ object YouTubeDataRepository {
                 }
             }
             results.distinctBy { it.videoId }.sortedByDescending { it.publishedAt }
+        }
+
+    /** Loads public top-level comments; videos with disabled comments may return an API error. */
+    suspend fun publicComments(videoId: String, apiKey: String): List<YouTubeComment> =
+        withContext(Dispatchers.IO) {
+            require(apiKey.isNotBlank()) { "YouTube Data API key is not configured." }
+            require(Regex("^[A-Za-z0-9_-]{11}$").matches(videoId)) { "Invalid YouTube video ID." }
+            val url = "https://www.googleapis.com/youtube/v3/commentThreads" +
+                "?part=snippet&videoId=${encode(videoId)}&maxResults=20&order=relevance&textFormat=plainText&key=${encode(apiKey)}"
+            val response = getJson(url)
+            val items = response.optJSONArray("items") ?: JSONArray()
+            buildList {
+                for (i in 0 until items.length()) {
+                    val thread = items.optJSONObject(i) ?: continue
+                    val snippet = thread.optJSONObject("snippet")?.optJSONObject("topLevelComment")?.optJSONObject("snippet") ?: continue
+                    add(YouTubeComment(
+                        author = snippet.optString("authorDisplayName", "YouTube user"),
+                        text = snippet.optString("textDisplay", ""),
+                        publishedAt = snippet.optString("publishedAt", "")
+                    ))
+                }
+            }
         }
 
     private fun getJson(url: String): JSONObject {

@@ -296,16 +296,63 @@ private fun SearchFeed(
     onQueryChange: (String) -> Unit,
     onPlay: (YouTubeVideo) -> Unit
 ) {
-    val filtered = videos.filter { it.title.contains(query, ignoreCase = true) || it.channelTitle.contains(query, ignoreCase = true) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var results by remember { mutableStateOf(videos) }
+    var searching by remember { mutableStateOf(false) }
+    var searchMessage by remember { mutableStateOf("Search checks public videos indexed by YouTube inside every saved channel, not just the latest videos.") }
+
+    androidx.compose.runtime.LaunchedEffect(videos) {
+        if (results.isEmpty()) results = videos
+    }
+
     Column(Modifier.fillMaxSize().padding(padding)) {
-        OutlinedTextField(value = query, onValueChange = onQueryChange, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), label = { Text("Search approved-channel videos") }, singleLine = true)
-        if (filtered.isEmpty()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            label = { Text("Search videos in saved channels") },
+            placeholder = { Text("Enter a title or keyword") },
+            singleLine = true
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        searching = true
+                        searchMessage = "Searching YouTube…"
+                        runCatching {
+                            YouTubeDataRepository.searchChannelVideos(context, BuildConfig.YOUTUBE_API_KEY, query)
+                        }.onSuccess {
+                            results = it
+                            searchMessage = if (it.isEmpty()) "No matching public videos found in your saved channels." else "Found ${it.size} matching video(s)."
+                        }.onFailure {
+                            searchMessage = it.message ?: "Search failed. Check your internet connection and API key."
+                        }
+                        searching = false
+                    }
+                },
+                enabled = !searching && query.isNotBlank() && ApprovedChannelStore.load(context).isNotEmpty()
+            ) { Text(if (searching) "Searching…" else "Search") }
+            Text("Saved channels only", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text(
+            searchMessage,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (results.isEmpty()) {
             Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (videos.isEmpty()) "No channel videos saved yet. Tap the YouTube logo 7 times to open Local Admin, then load videos." else "No videos match your search.")
+                Text(if (ApprovedChannelStore.load(context).isEmpty()) "No channels saved yet. Open Local Admin and add a channel first." else "Enter a keyword and press Search to find older or less recent videos.")
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(filtered, key = { it.videoId }) { video ->
+                items(results, key = { it.videoId }) { video ->
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.weight(1f).height(88.dp))

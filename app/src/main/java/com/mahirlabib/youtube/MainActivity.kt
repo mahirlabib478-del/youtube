@@ -221,7 +221,7 @@ private fun YouTubeApp() {
                 selectedTab == 0 -> HomeFeed(
                     padding = padding,
                     approvedVideos = approvedVideos,
-                    onPlayApproved = { video -> playVideo(video.videoId, video.title, video.channelTitle) },
+                    onPlayApproved = { video -> playVideo(video.videoId, video.title, video.channelTitle, video.description) },
                     onPlayDemo = { video -> video.videoId?.let { playVideo(it, video.title, video.channel, video.description) } }
                 )
                 selectedTab == 1 -> PlaceholderScreen(
@@ -243,7 +243,7 @@ private fun YouTubeApp() {
                     videos = approvedVideos,
                     query = searchQuery,
                     onQueryChange = { searchQuery = it },
-                    onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle) }
+                    onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle, video.description) }
                 )
             }
         }
@@ -634,7 +634,7 @@ private fun PlayerScreen(
         }
         YouTubeEmbedPlayer(
             videoId = videoId,
-            modifier = Modifier.fillMaxWidth().height(300.dp)
+            modifier = Modifier.fillMaxWidth().height(340.dp)
         )
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),

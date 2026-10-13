@@ -18,7 +18,8 @@ data class YouTubeVideo(
     val videoId: String,
     val title: String,
     val channelTitle: String,
-    val publishedAt: String
+    val publishedAt: String,
+    val description: String = ""
 )
 
 internal fun isValidYouTubeChannelId(value: String): Boolean =
@@ -111,7 +112,8 @@ object YouTubeDataRepository {
                             videoId = id,
                             title = snippet.optString("title", "YouTube video"),
                             channelTitle = channelTitle,
-                            publishedAt = snippet.optString("publishedAt", "")
+                            publishedAt = snippet.optString("publishedAt", ""),
+                            description = snippet.optString("description", "")
                         )
                     }
                 }
@@ -152,7 +154,8 @@ object YouTubeDataRepository {
                         videoId = id,
                         title = snippet.optString("title", "YouTube video"),
                         channelTitle = snippet.optString("channelTitle", channel.channelId),
-                        publishedAt = snippet.optString("publishedAt", "")
+                        publishedAt = snippet.optString("publishedAt", ""),
+                        description = snippet.optString("description", "")
                     )
                 }
             }
@@ -203,7 +206,8 @@ object LocalVideoStore {
                         videoId = id,
                         title = item.optString("title", "YouTube video"),
                         channelTitle = item.optString("channelTitle", "Unknown channel"),
-                        publishedAt = item.optString("publishedAt", "")
+                        publishedAt = item.optString("publishedAt", ""),
+                        description = item.optString("description", "")
                     ))
                 }
             }
@@ -217,7 +221,8 @@ object LocalVideoStore {
                 .put("videoId", video.videoId)
                 .put("title", video.title)
                 .put("channelTitle", video.channelTitle)
-                .put("publishedAt", video.publishedAt))
+                .put("publishedAt", video.publishedAt)
+                .put("description", video.description))
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, array.toString()).apply()

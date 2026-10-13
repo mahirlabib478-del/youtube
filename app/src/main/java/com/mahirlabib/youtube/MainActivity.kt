@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,6 +23,9 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
@@ -127,9 +133,19 @@ private fun YouTubeApp() {
                             },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("▶", color = androidx.compose.ui.graphics.Color.White, fontSize = 17.sp, modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
+                            Surface(
+                                color = androidx.compose.ui.graphics.Color(0xFFFF0033),
+                                shape = RoundedCornerShape(7.dp),
+                                modifier = Modifier.padding(end = 6.dp)
+                            ) {
+                                Text("▶", color = androidx.compose.ui.graphics.Color.White, fontSize = 15.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
                             Text("YouTube", color = androidx.compose.ui.graphics.Color(0xFF0F0F0F), fontWeight = FontWeight.Bold, fontSize = 21.sp)
                         }
+                    },
+                    actions = {
+                        Icon(Icons.Default.Cast, contentDescription = "Cast", modifier = Modifier.padding(horizontal = 10.dp).size(22.dp))
+                        Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", modifier = Modifier.padding(horizontal = 10.dp).size(22.dp))
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = androidx.compose.ui.graphics.Color.White
@@ -147,7 +163,7 @@ private fun YouTubeApp() {
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1; activeVideoId = null },
-                        icon = { Icon(Icons.Default.Search, contentDescription = "Shorts preview") },
+                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Shorts") },
                         label = { Text(tabs[1]) }
                     )
                     NavigationBarItem(
@@ -246,21 +262,51 @@ private fun HomeFeed(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Explore", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("All", "Music", "News", "Live", "Podcasts", "Recently uploaded").forEachIndexed { index, label ->
+                    Surface(
+                        color = if (index == 0) androidx.compose.ui.graphics.Color(0xFF0F0F0F) else androidx.compose.ui.graphics.Color(0xFFF2F2F2),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            label,
+                            color = if (index == 0) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFF0F0F0F),
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Text(if (approvedVideos.isEmpty()) "Add channels in hidden Local Admin, then load their latest public uploads." else "Latest videos from your saved channels", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (approvedVideos.isNotEmpty()) {
             items(approvedVideos, key = { it.videoId }) { video ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                    Column(Modifier.padding(14.dp)) {
-                        VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.fillMaxWidth().height(210.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(4.dp))
-                        Text(video.channelTitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { onPlayApproved(video) }) { Text("Play video") }
+                Column(Modifier.fillMaxWidth()) {
+                    VideoThumbnail(videoId = video.videoId, title = video.title, modifier = Modifier.fillMaxWidth().height(218.dp).clickable { onPlayApproved(video) })
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(38.dp),
+                            shape = RoundedCornerShape(50),
+                            color = androidx.compose.ui.graphics.Color(0xFFF2F2F2)
+                        ) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(video.channelTitle.take(1).uppercase(), fontWeight = FontWeight.Bold, color = androidx.compose.ui.graphics.Color(0xFF606060))
+                            }
+                        }
+                        Column(Modifier.weight(1f).clickable { onPlayApproved(video) }) {
+                            Text(video.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                            Spacer(Modifier.height(4.dp))
+                            Text(video.channelTitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        Text("⋮", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
                     }
                 }
             }

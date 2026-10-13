@@ -101,15 +101,17 @@ private fun YouTubeApp() {
     var activeVideoId by remember { mutableStateOf<String?>(null) }
     var activeVideoTitle by remember { mutableStateOf("") }
     var activeVideoChannel by remember { mutableStateOf("") }
+    var activeVideoDescription by remember { mutableStateOf("") }
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
     var searchQuery by remember { mutableStateOf("") }
     val tabs = listOf("Home", "Shorts", "Library", "Search")
 
-    fun playVideo(videoId: String, title: String, channel: String) {
+    fun playVideo(videoId: String, title: String, channel: String, description: String = "") {
         history = WatchHistoryStore.record(context, videoId, title, channel)
         activeVideoTitle = title
         activeVideoChannel = channel
+        activeVideoDescription = description
         activeVideoId = videoId
     }
 
@@ -204,7 +206,7 @@ private fun YouTubeApp() {
                     }
                     ChannelManagerScreen(
                         padding = PaddingValues(0.dp),
-                        onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle) },
+                        onPlay = { video -> playVideo(video.videoId, video.title, video.channelTitle, video.description) },
                         onVideosLoaded = { approvedVideos = it }
                     )
                 }
@@ -212,6 +214,7 @@ private fun YouTubeApp() {
                     videoId = activeVideoId!!,
                     title = activeVideoTitle,
                     channel = activeVideoChannel,
+                    description = activeVideoDescription,
                     padding = padding,
                     onClose = { activeVideoId = null }
                 )
@@ -219,7 +222,7 @@ private fun YouTubeApp() {
                     padding = padding,
                     approvedVideos = approvedVideos,
                     onPlayApproved = { video -> playVideo(video.videoId, video.title, video.channelTitle) },
-                    onPlayDemo = { video -> video.videoId?.let { playVideo(it, video.title, video.channel) } }
+                    onPlayDemo = { video -> video.videoId?.let { playVideo(it, video.title, video.channel, video.description) } }
                 )
                 selectedTab == 1 -> PlaceholderScreen(
                     "Shorts-style feed",
@@ -616,6 +619,7 @@ private fun PlayerScreen(
     videoId: String,
     title: String,
     channel: String,
+    description: String,
     padding: PaddingValues,
     onClose: () -> Unit
 ) {
@@ -674,7 +678,7 @@ private fun PlayerScreen(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             if (descriptionExpanded)
-                                "This video is played through YouTube's official embedded player. Full video description, likes and comments are provided by YouTube. Use the buttons above to open the video in YouTube for account actions and the full comment thread."
+                                description.ifBlank { "No description was returned by YouTube for this video. Open the video on YouTube to see its full details." }
                             else "Show video details",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -38,53 +38,21 @@ fun YouTubeEmbedPlayer(videoId: String, modifier: Modifier = Modifier) {
                 // Let YouTube handle its player/CDN redirects; filtering navigation can block playback.
                 webViewClient = WebViewClient()
                 tag = videoId
-                loadDataWithBaseURL(
-                    "https://www.youtube.com/",
-                    buildEmbedHtml(videoId),
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+                // Load the official embed URL directly so WebView sends a normal HTTPS
+                // navigation/referrer instead of wrapping the player in generated HTML.
+                loadUrl(embedUrl(videoId))
             }
         },
         update = { view ->
             val current = view.tag as? String
             if (current != videoId) {
                 view.tag = videoId
-                view.loadDataWithBaseURL(
-                    "https://www.youtube.com/",
-                    buildEmbedHtml(videoId),
-                    "text/html",
-                    "UTF-8",
-                    null
-                )
+                view.loadUrl(embedUrl(videoId))
             }
         }
     )
 }
 
-private fun buildEmbedHtml(videoId: String): String = """
-    <!doctype html>
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-        <meta name="referrer" content="strict-origin-when-cross-origin">
-        <style>
-          html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
-          .player { position: relative; width: 100%; height: 100%; }
-          iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-        </style>
-      </head>
-      <body>
-        <div class="player">
-          <iframe
-            src="https://www.youtube.com/embed/$videoId?playsinline=1&rel=0&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com"
-            title="YouTube video player"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allowfullscreen>
-          </iframe>
-        </div>
-      </body>
-    </html>
-""".trimIndent()
+
+private fun embedUrl(videoId: String): String =
+    "https://www.youtube.com/embed/$videoId?playsinline=1&rel=0&autoplay=0"

@@ -99,7 +99,7 @@ object YouTubeDataRepository {
 
                 val playlistJson = getJson(
                     "https://www.googleapis.com/youtube/v3/playlistItems" +
-                        "?part=snippet&playlistId=${encode(uploadsId)}&maxResults=10&key=${encode(apiKey)}"
+                        "?part=snippet&playlistId=${encode(uploadsId)}&maxResults=50&key=${encode(apiKey)}"
                 )
                 val items = playlistJson.optJSONArray("items") ?: JSONArray()
                 for (i in 0 until items.length()) {

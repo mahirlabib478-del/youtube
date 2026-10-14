@@ -1,82 +1,77 @@
 package com.mahirlabib.youtube
 
-import android.annotation.SuppressLint
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.AndroidView
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 
 private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
 
 /**
- * Uses YouTube's official embedded player. Playback remains subject to YouTube
- * embedding permissions, video availability, network connectivity and account restrictions.
+ * Reliable playback fallback: show the real YouTube thumbnail in-app and open
+ * the official YouTube watch page for playback. This avoids a blank WebView
+ * when YouTube's embedded player rejects the app with Error 153.
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeEmbedPlayer(videoId: String, modifier: Modifier = Modifier) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID" }
+    val context = LocalContext.current
 
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.mediaPlaybackRequiresUserGesture = true
-                settings.loadsImagesAutomatically = true
-                settings.javaScriptCanOpenWindowsAutomatically = false
-                settings.allowFileAccess = false
-                settings.allowContentAccess = false
-                settings.setSupportMultipleWindows(false)
-                CookieManager.getInstance().setAcceptCookie(true)
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webChromeClient = WebChromeClient()
-                webViewClient = WebViewClient()
-                tag = videoId
-                loadPlayerHtml(videoId)
+    Box(
+        modifier = modifier.background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        AsyncImage(
+            model = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+            contentDescription = "YouTube video thumbnail",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0x99000000))
+                .padding(16.dp)
+        ) {
+            Text(
+                "Play this video on YouTube",
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Button(
+                onClick = {
+                    val watchUri = Uri.parse("https://www.youtube.com/watch?v=$videoId")
+                    val intent = Intent(Intent.ACTION_VIEW, watchUri)
+                    runCatching { context.startActivity(intent) }
+                },
+                shape = RoundedCornerShape(24.dp)
+            ) {
+                Text("▶  Play video")
             }
-        },
-        update = { view ->
-            val current = view.tag as? String
-            if (current != videoId) {
-                view.tag = videoId
-                view.loadPlayerHtml(videoId)
-            }
+            Text(
+                "Opens the official YouTube app or website",
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
-    )
-}
-
-private fun WebView.loadPlayerHtml(videoId: String) {
-    // Give the official player a real HTTPS base URL so its requests carry a
-    // Referer and an explicit origin, required by some YouTube player configurations.
-    val origin = "https://www.youtube.com"
-    val encodedOrigin = URLEncoder.encode(origin, StandardCharsets.UTF_8.name())
-    val html = """
-        <!doctype html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-          <style>
-            html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-            iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-          </style>
-        </head>
-        <body>
-          <iframe
-            src="https://www.youtube.com/embed/$videoId?playsinline=1&amp;rel=0&amp;autoplay=0&amp;origin=$encodedOrigin"
-            title="YouTube video player"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            referrerpolicy="strict-origin-when-cross-origin"
-            allowfullscreen>
-          </iframe>
-        </body>
-        </html>
-    """.trimIndent()
-    loadDataWithBaseURL(origin, html, "text/html", "UTF-8", null)
+    }
 }

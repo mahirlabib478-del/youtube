@@ -298,15 +298,6 @@ fun PlayerScreen(
                     )
                 }
 
-                if (!miniMode && isFullscreenExpanded) {
-                YouTubeEmbedPlayer(
-                    videoId = videoId,
-                    modifier = Modifier.fillMaxSize(),
-                    autoplay = true,
-                    onShowCustomView = onShowCustomView,
-                    onHideCustomView = onHideCustomView
-                )
-
                 if (isFullscreenExpanded) {
                     // Tap detector overlay to toggle controls visibility
                     Box(
@@ -320,7 +311,6 @@ fun PlayerScreen(
                             }
                     )
 
-                    // Auto-hiding immersive top bar
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isFullscreenControlsVisible,
                         enter = fadeIn(animationSpec = tween(200)),
@@ -359,7 +349,6 @@ fun PlayerScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-
                             IconButton(
                                 onClick = { isFullscreenExpanded = false },
                                 modifier = Modifier.testTag("exit_fullscreen_mode_button")

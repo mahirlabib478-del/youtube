@@ -186,6 +186,21 @@ private fun YouTubeApp(
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
     val activity = context as? ComponentActivity
+
+    // Register PiP auto-enter parameters before the Home gesture on Android 12+.
+    LaunchedEffect(activeVideo, playbackMode, activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
+            val builder = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(
+                    activeVideo != null && playbackMode == PipSettingsStore.MODE_VIDEO
+                )
+            }
+            runCatching { activity.setPictureInPictureParams(builder.build()) }
+                .onFailure { android.util.Log.w("MainActivity", "Unable to update PiP parameters", it) }
+        }
+    }
+
     LaunchedEffect(customFullscreenView) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)

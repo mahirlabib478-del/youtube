@@ -30,10 +30,10 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           if [ -n "$YOUTUBE_API_KEY" ]; then
-            printf 'YOUTUBE_API_KEY=%s\\n' "$YOUTUBE_API_KEY" > .env
+            printf 'YOUTUBE_API_KEY=%s\n' "$YOUTUBE_API_KEY" > .env
           else
             echo 'YOUTUBE_API_KEY secret is not configured; API-backed features will be unavailable.'
-            printf 'YOUTUBE_API_KEY=your_api_key_here\\n' > .env
+            printf 'YOUTUBE_API_KEY=your_api_key_here\n' > .env
           fi
       - name: Run unit tests and assemble debug APK
         run: gradle :app:testDebugUnitTest :app:assembleDebug

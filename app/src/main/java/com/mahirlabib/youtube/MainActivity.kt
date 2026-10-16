@@ -558,7 +558,7 @@ private fun YouTubeApp(
                     )
                 }
 
-                activeVideo != null && !isMiniPlayer -> {
+                activeVideo != null -> {
                     PlayerScreen(
                         video = activeVideo!!,
                         padding = padding,

@@ -1,11 +1,7 @@
 package com.mahirlabib.youtube
 
-import android.app.PictureInPictureParams
 import android.content.Context
-import android.content.res.Configuration
-import android.os.Build
 import android.os.Bundle
-import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -41,7 +37,6 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -105,68 +100,22 @@ object ThemeStore {
 }
 
 class MainActivity : ComponentActivity() {
-    companion object {
-        var isPipActiveState = mutableStateOf(false)
-        var currentActiveVideoState = mutableStateOf<YouTubeVideo?>(null)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            YouTubeApp(
-                isPipActive = isPipActiveState.value,
-                onActiveVideoChanged = { currentActiveVideoState.value = it }
-            )
+            YouTubeApp()
         }
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        val video = currentActiveVideoState.value
-        // Only the Floating Video mode should enter PiP. Audio-only mode cannot
-        // be guaranteed by a YouTube iframe once Android backgrounds the WebView.
-        if (currentActiveVideoState.value != null && PipSettingsStore.isPipVideoEnabled(this)) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                try {
-                    val builder = PictureInPictureParams.Builder()
-                        .setAspectRatio(Rational(16, 9))
-                    // Android 12+ can enter PiP as part of the Home gesture, avoiding
-                    // a separate onUserLeaveHint transition animation.
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        builder.setAutoEnterEnabled(true)
-                    }
-                    enterPictureInPictureMode(builder.build())
-                } catch (e: Exception) {
-                    android.util.Log.w("MainActivity", "Failed to enter Picture-in-Picture mode", e)
-                }
-            }
-        }
-    }
-
-    override fun onPictureInPictureModeChanged(
-        isInPictureInPictureMode: Boolean,
-        newConfig: Configuration
-    ) {
-        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        isPipActiveState.value = isInPictureInPictureMode
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YouTubeApp(
-    isPipActive: Boolean = false,
-    onActiveVideoChanged: (YouTubeVideo?) -> Unit = {}
-) {
+private fun YouTubeApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
-    var playbackMode by remember { mutableStateOf(PipSettingsStore.getPlaybackMode(context)) }
-    val isPipEnabled = playbackMode != PipSettingsStore.MODE_DISABLED
-    var showPipSettingsDialog by remember { mutableStateOf(false) }
-
     var selectedTab by remember { mutableIntStateOf(0) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var isMiniPlayer by remember { mutableStateOf(false) }
@@ -178,30 +127,11 @@ private fun YouTubeApp(
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Sync active video with Activity for PiP
-    LaunchedEffect(activeVideo) {
-        onActiveVideoChanged(activeVideo)
-    }
-
     // Fullscreen video state
     var customFullscreenView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
     val activity = context as? ComponentActivity
-
-    // Register PiP auto-enter parameters before the Home gesture on Android 12+.
-    LaunchedEffect(activeVideo, playbackMode, activity) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && activity != null) {
-            val builder = PictureInPictureParams.Builder().setAspectRatio(Rational(16, 9))
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(
-                    activeVideo != null && playbackMode == PipSettingsStore.MODE_VIDEO
-                )
-            }
-            runCatching { activity.setPictureInPictureParams(builder.build()) }
-                .onFailure { android.util.Log.w("MainActivity", "Unable to update PiP parameters", it) }
-        }
-    }
 
     LaunchedEffect(customFullscreenView) {
         val window = activity?.window ?: return@LaunchedEffect
@@ -364,51 +294,6 @@ private fun YouTubeApp(
             return@MaterialTheme
         }
 
-        // Background playback mode settings.
-        if (showPipSettingsDialog) {
-            AlertDialog(
-                onDismissRequest = { showPipSettingsDialog = false },
-                title = { Text("Background Playback") },
-                text = {
-                    Column {
-                        Text(
-                            text = "Choose what should happen when you leave the app. Audio-only playback may not continue because YouTube embedded playback does not guarantee background audio.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        listOf(
-                            PipSettingsStore.MODE_VIDEO to ("Floating Video" to "Continue in a small picture-in-picture window"),
-                            PipSettingsStore.MODE_AUDIO to ("Background Audio Only" to "Attempts audio-only background playback; not guaranteed"),
-                            PipSettingsStore.MODE_DISABLED to ("Disabled" to "Do not enter picture-in-picture automatically")
-                        ).forEach { (mode, details) ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                                    playbackMode = mode
-                                    PipSettingsStore.setPlaybackMode(context, mode)
-                                    Toast.makeText(context, details.first + " selected", Toast.LENGTH_SHORT).show()
-                                }.padding(vertical = 10.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                androidx.compose.material3.RadioButton(
-                                    selected = playbackMode == mode,
-                                    onClick = {
-                                        playbackMode = mode
-                                        PipSettingsStore.setPlaybackMode(context, mode)
-                                    }
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Column {
-                                    Text(details.first, fontWeight = FontWeight.SemiBold)
-                                    Text(details.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { showPipSettingsDialog = false }) { Text("Done") } }
-            )
-        }
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
@@ -441,18 +326,6 @@ private fun YouTubeApp(
                             }
                         },
                         actions = {
-                            // Background PiP Toggle Option Dialog
-                            IconButton(
-                                onClick = { showPipSettingsDialog = true },
-                                modifier = Modifier.testTag("pip_settings_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.PictureInPictureAlt,
-                                    contentDescription = "Background Playback Settings",
-                                    tint = if (isPipEnabled) Color(0xFFFF0033) else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
                             // Dark / Light Theme Toggle
                             IconButton(
                                 onClick = {
@@ -569,7 +442,6 @@ private fun YouTubeApp(
                             openChannel(chId, chTitle, chAvatar)
                         },
                         miniMode = isMiniPlayer,
-                        pipMode = isPipActive
                     )
                 }
 

@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -71,9 +74,22 @@ fun HomeFeed(
     errorMessage: String?,
     onPlayVideo: (YouTubeVideo) -> Unit,
     onRefresh: () -> Unit,
+    onLoadMore: () -> Unit = {},
+    isLoadingMore: Boolean = false,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
+    val feedListState = rememberLazyListState()
+    val nearFeedEnd by remember {
+        derivedStateOf {
+            val total = feedListState.layoutInfo.totalItemsCount
+            val lastVisible = feedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            total > 0 && lastVisible >= total - 4
+        }
+    }
+    LaunchedEffect(nearFeedEnd, isLoading, isLoadingMore, videos.size) {
+        if (nearFeedEnd && !isLoading && !isLoadingMore && videos.isNotEmpty()) onLoadMore()
+    }
     val categories = listOf("All", "Programming", "Science", "Tech", "Blender", "Podcasts", "Design", "Physics", "Tutorials")
 
     Column(
@@ -117,6 +133,7 @@ fun HomeFeed(
                 .testTag("home_pull_to_refresh")
         ) {
             LazyColumn(
+                state = feedListState,
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("home_feed_list"),
@@ -273,6 +290,14 @@ fun HomeFeed(
                         onOpenChannel = onOpenChannel
                     )
                     Spacer(Modifier.height(16.dp))
+                }
+                if (isLoadingMore) {
+                    item(key = "feed_load_more") {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) { CircularProgressIndicator(color = Color(0xFFFF0033)) }
+                    }
                 }
             }
         }

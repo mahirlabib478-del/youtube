@@ -568,7 +568,8 @@ private fun YouTubeApp(
                             isMiniPlayer = true
                             openChannel(chId, chTitle, chAvatar)
                         },
-                        miniMode = isMiniPlayer
+                        miniMode = isMiniPlayer,
+                        pipMode = isPipActive
                     )
                 }
 

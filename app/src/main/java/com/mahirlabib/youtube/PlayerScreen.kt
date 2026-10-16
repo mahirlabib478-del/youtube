@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -213,6 +214,7 @@ fun PlayerScreen(
                 .width(200.dp)
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(12.dp))
+                .clipToBounds()
                 .background(Color.Black)
                 .testTag("player_screen_mini_host")
         } else {
@@ -264,7 +266,10 @@ fun PlayerScreen(
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
                 modifier = if (isFullscreenExpanded || miniMode) {
-                    Modifier.fillMaxSize().background(Color.Black)
+                    Modifier.fillMaxSize()
+                        .clip(if (miniMode) RoundedCornerShape(12.dp) else RoundedCornerShape(0.dp))
+                        .clipToBounds()
+                        .background(Color.Black)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                 }
@@ -290,8 +295,9 @@ fun PlayerScreen(
                             onClick = onClose,
                             modifier = Modifier.align(Alignment.TopEnd).size(36.dp)
                                 .background(Color(0x99000000), CircleShape)
+                                .testTag("mini_player_close_button")
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Close mini player", tint = Color.White)
+                            Icon(Icons.Default.Close, contentDescription = "Close mini player", tint = Color.White)
                         }
                     }
                 }

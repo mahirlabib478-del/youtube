@@ -100,7 +100,8 @@ fun PlayerScreen(
     onClose: () -> Unit,
     onPlayRelated: (YouTubeVideo) -> Unit,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -383,7 +384,11 @@ fun PlayerScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        onOpenChannel(video.channelId, video.channelTitle, video.channelAvatarUrl)
+                                    }
                             ) {
                                 ChannelAvatar(
                                     channelTitle = video.channelTitle,
@@ -398,7 +403,7 @@ fun PlayerScreen(
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
-                                        text = "Verified Channel",
+                                        text = "Verified Channel • View Profile",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

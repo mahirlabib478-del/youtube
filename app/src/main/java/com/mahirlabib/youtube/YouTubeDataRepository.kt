@@ -348,6 +348,327 @@ object YouTubeDataRepository {
             )
         }
 
+    data class ChannelVideosPage(
+        val videos: List<YouTubeVideo>,
+        val continuationToken: String? = null
+    )
+
+    /**
+     * Resolves ANY user input into an ApprovedChannel:
+     * - Direct 24-char UC... channel ID
+     * - YouTube Channel URL (e.g. youtube.com/channel/UC..., youtube.com/@handle)
+     * - Channel handle (e.g. @mkbhd, @Veritasium)
+     * - Video URL (e.g. youtu.be/xyz, youtube.com/watch?v=xyz)
+     * - Plain-text channel name / query (e.g. "Veritasium", "Fireship")
+     */
+    suspend fun resolveChannelInput(context: Context, apiKey: String, rawInput: String): ApprovedChannel =
+        withContext(Dispatchers.IO) {
+            val input = rawInput.trim()
+            if (input.isBlank()) throw IllegalArgumentException("Please enter a channel name, handle, or URL.")
+
+            // 1. Direct 24-character UC... Channel ID
+            if (isValidYouTubeChannelId(input)) {
+                return@withContext fetchChannelDetails(apiKey, input)
+            }
+
+            // 2. Channel URL containing /channel/UC...
+            val channelUrlRegex = Regex("""youtube\.com/channel/(UC[a-zA-Z0-9_-]{22})""")
+            val channelMatch = channelUrlRegex.find(input)
+            if (channelMatch != null) {
+                val chId = channelMatch.groupValues[1]
+                return@withContext fetchChannelDetails(apiKey, chId)
+            }
+
+            // 3. Handle like @handle or URL containing /@handle
+            val handleRegex = Regex("""(?:youtube\.com/)?@([a-zA-Z0-9._-]+)""")
+            val handleMatch = handleRegex.find(input)
+            val handle = handleMatch?.groupValues?.get(1) ?: if (input.startsWith("@")) input.removePrefix("@") else null
+
+            if (!handle.isNullOrBlank()) {
+                val resolvedFromHandle = runCatching {
+                    val url = "https://www.youtube.com/@$handle"
+                    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 8_000
+                        readTimeout = 10_000
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                        setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                    }
+                    val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    connection.disconnect()
+
+                    val canonicalMatch = Regex("""canonical"\s+href="https://www\.youtube\.com/channel/(UC[a-zA-Z0-9_-]{22})""").find(html)
+                        ?: Regex(""""externalId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
+                        ?: Regex(""""channelId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
+                    val chId = canonicalMatch?.groupValues?.get(1)
+
+                    val titleMatch = Regex("""property="og:title"\s+content="([^"]+)"""").find(html)
+                        ?: Regex("""name="title"\s+content="([^"]+)"""").find(html)
+                    val title = titleMatch?.groupValues?.get(1) ?: "@$handle"
+
+                    val avatarMatch = Regex("""property="og:image"\s+content="([^"]+)"""").find(html)
+                        ?: Regex("""https://yt3\.(?:googleusercontent|ggpht)\.com/[^"'\s<>]+""").find(html)
+                    val avatar = avatarMatch?.let { if (it.groupValues.size > 1) it.groupValues[1] else it.value }.orEmpty()
+
+                    if (!chId.isNullOrBlank()) {
+                        ApprovedChannel(channelId = chId, title = title, avatarUrl = avatar)
+                    } else null
+                }.getOrNull()
+
+                if (resolvedFromHandle != null) {
+                    return@withContext resolvedFromHandle
+                }
+            }
+
+            // 4. Video URL (e.g. youtu.be/... or youtube.com/watch?v=...)
+            val videoIdRegex = Regex("""(?:v=|youtu\.be/|embed/|shorts/)([a-zA-Z0-9_-]{11})""")
+            val videoMatch = videoIdRegex.find(input)
+            if (videoMatch != null) {
+                val vId = videoMatch.groupValues[1]
+                val resolvedFromVideo = runCatching {
+                    val oembedJson = getJson("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$vId&format=json")
+                    val authorUrl = oembedJson.optString("author_url", "")
+                    val authorName = oembedJson.optString("author_name", "")
+                    if (authorUrl.isNotBlank()) {
+                        resolveChannelInput(context, apiKey, authorUrl)
+                    } else null
+                }.getOrNull()
+
+                if (resolvedFromVideo != null) {
+                    return@withContext resolvedFromVideo
+                }
+            }
+
+            // 5. Plain text search for channel name or query (e.g. "Veritasium" or "Marques Brownlee")
+            val searchResolved = runCatching {
+                val searchUrl = "https://www.youtube.com/results?search_query=${encode(input)}&sp=EgIQAg%253D%253D"
+                val connection = (URL(searchUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8_000
+                    readTimeout = 10_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                }
+                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+
+                val chIdMatch = Regex(""""channelId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
+                if (chIdMatch != null) {
+                    val chId = chIdMatch.groupValues[1]
+                    fetchChannelDetails(apiKey, chId)
+                } else null
+            }.getOrNull()
+
+            if (searchResolved != null) {
+                return@withContext searchResolved
+            }
+
+            if (isApiKeyConfigured(apiKey)) {
+                val apiSearch = runCatching {
+                    val json = getJson("https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encode(input)}&maxResults=1&key=${encode(apiKey)}")
+                    val items = json.optJSONArray("items")
+                    if (items != null && items.length() > 0) {
+                        val item = items.getJSONObject(0)
+                        val id = item.optJSONObject("id")?.optString("channelId").orEmpty()
+                        if (id.isNotBlank()) {
+                            fetchChannelDetails(apiKey, id)
+                        } else null
+                    } else null
+                }.getOrNull()
+                if (apiSearch != null) return@withContext apiSearch
+            }
+
+            throw IllegalArgumentException("Could not find a YouTube channel for \"$input\". Please check the name or handle.")
+        }
+
+    /**
+     * Fetches a paginated page of channel uploads for infinite scrolling.
+     */
+    suspend fun fetchChannelVideosPage(
+        channelId: String,
+        channelAvatarUrl: String = "",
+        continuationToken: String? = null
+    ): ChannelVideosPage = withContext(Dispatchers.IO) {
+        val normalizedId = channelId.trim()
+        val resultVideos = mutableListOf<YouTubeVideo>()
+        var nextToken: String? = null
+
+        if (continuationToken == null) {
+            // Step 1: Instant load from RSS feed
+            val (rssChannelTitle, rssVideos) = fetchChannelRssVideos(normalizedId)
+            val mappedRss = rssVideos.map {
+                it.copy(channelAvatarUrl = if (it.channelAvatarUrl.isBlank()) channelAvatarUrl else it.channelAvatarUrl)
+            }
+            resultVideos.addAll(mappedRss)
+
+            // Step 2: Extract up to 30 videos + continuation token from channel /videos page
+            runCatching {
+                val url = "https://www.youtube.com/channel/$normalizedId/videos"
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8_000
+                    readTimeout = 10_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                }
+                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+
+                val p1 = html.indexOf("ytInitialData = ")
+                if (p1 != -1) {
+                    val start = p1 + "ytInitialData = ".length
+                    val end = html.indexOf(";</script>", start)
+                    if (end != -1) {
+                        val json = JSONObject(html.substring(start, end))
+                        parseVideosFromYouTubeJson(json, normalizedId, rssChannelTitle, channelAvatarUrl, resultVideos)
+                        nextToken = findContinuationToken(json)
+                    }
+                }
+            }
+        } else {
+            // Step 3: Subsequent pages via YouTube Internal Browse API
+            runCatching {
+                val url = "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"
+                val postPayload = JSONObject().apply {
+                    put("context", JSONObject().apply {
+                        put("client", JSONObject().apply {
+                            put("clientName", "WEB")
+                            put("clientVersion", "2.20240101.00.00")
+                            put("hl", "en")
+                            put("gl", "US")
+                        })
+                    })
+                    put("continuation", continuationToken)
+                }
+
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 10_000
+                    readTimeout = 12_000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                }
+                connection.outputStream.use { os ->
+                    os.write(postPayload.toString().toByteArray(Charsets.UTF_8))
+                }
+                val responseText = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+
+                val json = JSONObject(responseText)
+                parseVideosFromYouTubeJson(json, normalizedId, "", channelAvatarUrl, resultVideos)
+                nextToken = findContinuationToken(json)
+            }
+        }
+
+        val deduplicated = resultVideos.distinctBy { it.videoId }
+        ChannelVideosPage(deduplicated, nextToken)
+    }
+
+    private fun parseVideosFromYouTubeJson(
+        jsonObj: Any?,
+        channelId: String,
+        defaultChannelTitle: String,
+        defaultAvatar: String,
+        outputList: MutableList<YouTubeVideo>
+    ) {
+        when (jsonObj) {
+            is JSONObject -> {
+                if (jsonObj.has("lockupViewModel")) {
+                    val lum = jsonObj.optJSONObject("lockupViewModel")
+                    val vid = lum?.optString("contentId", "").orEmpty()
+                    val meta = lum?.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+                    val title = meta?.optJSONObject("title")?.optString("content", "").orEmpty()
+                    val rows = meta?.optJSONObject("metadata")
+                        ?.optJSONObject("contentMetadataViewModel")
+                        ?.optJSONArray("metadataRows")
+                    var published = ""
+                    var views = ""
+                    if (rows != null && rows.length() > 0) {
+                        val parts = rows.optJSONObject(0)?.optJSONArray("metadataParts")
+                        if (parts != null) {
+                            if (parts.length() > 0) views = parts.optJSONObject(0)?.optJSONObject("text")?.optString("content", "").orEmpty()
+                            if (parts.length() > 1) published = parts.optJSONObject(1)?.optJSONObject("text")?.optString("content", "").orEmpty()
+                        }
+                    }
+                    if (vid.isNotBlank() && title.isNotBlank()) {
+                        outputList.add(
+                            YouTubeVideo(
+                                videoId = vid,
+                                title = title,
+                                channelTitle = defaultChannelTitle,
+                                publishedAt = published,
+                                description = "",
+                                channelId = channelId,
+                                channelAvatarUrl = defaultAvatar,
+                                viewCount = views
+                            )
+                        )
+                    }
+                } else if (jsonObj.has("videoRenderer")) {
+                    val vr = jsonObj.optJSONObject("videoRenderer")
+                    val vid = vr?.optString("videoId", "").orEmpty()
+                    val title = vr?.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text", "")
+                        ?: vr?.optJSONObject("title")?.optJSONObject("accessibility")?.optJSONObject("accessibilityData")?.optString("label", "")
+                        ?: ""
+                    val pub = vr?.optJSONObject("publishedTimeText")?.optString("simpleText", "").orEmpty()
+                    val views = vr?.optJSONObject("viewCountText")?.optString("simpleText", "").orEmpty()
+                    if (vid.isNotBlank() && title.isNotBlank()) {
+                        outputList.add(
+                            YouTubeVideo(
+                                videoId = vid,
+                                title = title,
+                                channelTitle = defaultChannelTitle,
+                                publishedAt = pub,
+                                description = "",
+                                channelId = channelId,
+                                channelAvatarUrl = defaultAvatar,
+                                viewCount = views
+                            )
+                        )
+                    }
+                }
+                val keys = jsonObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    parseVideosFromYouTubeJson(jsonObj.opt(k), channelId, defaultChannelTitle, defaultAvatar, outputList)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until jsonObj.length()) {
+                    parseVideosFromYouTubeJson(jsonObj.opt(i), channelId, defaultChannelTitle, defaultAvatar, outputList)
+                }
+            }
+        }
+    }
+
+    private fun findContinuationToken(jsonObj: Any?): String? {
+        when (jsonObj) {
+            is JSONObject -> {
+                if (jsonObj.has("continuationCommand")) {
+                    val token = jsonObj.optJSONObject("continuationCommand")?.optString("token", "")
+                    if (!token.isNullOrBlank()) return token
+                }
+                val keys = jsonObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    val found = findContinuationToken(jsonObj.opt(k))
+                    if (found != null) return found
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until jsonObj.length()) {
+                    val found = findContinuationToken(jsonObj.opt(i))
+                    if (found != null) return found
+                }
+            }
+        }
+        return null
+    }
+
     /**
      * Loads videos from all approved channels chronologically.
      * Uses YouTube Data API v3 if key configured, and automatically falls back to YouTube's public RSS feeds.

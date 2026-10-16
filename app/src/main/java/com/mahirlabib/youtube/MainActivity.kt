@@ -161,6 +161,7 @@ private fun YouTubeApp(
     var selectedTab by remember { mutableIntStateOf(0) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var isMiniPlayer by remember { mutableStateOf(false) }
+    var selectedChannel by remember { mutableStateOf<ChannelDetailState?>(null) }
 
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
@@ -203,6 +204,24 @@ private fun YouTubeApp(
         isMiniPlayer = false
     }
 
+    fun openChannel(channelId: String, channelTitle: String, channelAvatarUrl: String) {
+        val resolvedId = if (channelId.isNotBlank()) channelId else {
+            approvedVideos.find { it.channelTitle.equals(channelTitle, ignoreCase = true) }?.channelId
+                ?: ApprovedChannelStore.DEFAULT_CHANNELS.find { it.title.equals(channelTitle, ignoreCase = true) }?.channelId
+                ?: ""
+        }
+        val resolvedAvatar = if (channelAvatarUrl.isNotBlank()) channelAvatarUrl else {
+            approvedVideos.find { it.channelTitle.equals(channelTitle, ignoreCase = true) }?.channelAvatarUrl
+                ?: ApprovedChannelStore.DEFAULT_CHANNELS.find { it.title.equals(channelTitle, ignoreCase = true) }?.avatarUrl
+                ?: ""
+        }
+        selectedChannel = ChannelDetailState(
+            channelId = resolvedId,
+            title = channelTitle.ifBlank { "Channel" },
+            avatarUrl = resolvedAvatar
+        )
+    }
+
     fun refreshFeed() {
         scope.launch {
             isFeedLoading = true
@@ -227,12 +246,15 @@ private fun YouTubeApp(
     }
 
     // Device Back Navigation handler
-    BackHandler(enabled = customFullscreenView != null || activeVideo != null || selectedTab != 0) {
+    BackHandler(enabled = customFullscreenView != null || selectedChannel != null || activeVideo != null || selectedTab != 0) {
         when {
             customFullscreenView != null -> {
                 customViewCallback?.onCustomViewHidden()
                 customFullscreenView = null
                 customViewCallback = null
+            }
+            selectedChannel != null -> {
+                selectedChannel = null
             }
             activeVideo != null && !isMiniPlayer -> {
                 // Smoothly collapse to In-App MiniPlayer just like actual YouTube!
@@ -373,7 +395,7 @@ private fun YouTubeApp(
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                if (activeVideo == null || isMiniPlayer) {
+                if ((activeVideo == null || isMiniPlayer) && selectedChannel == null) {
                     TopAppBar(
                         title = {
                             Row(
@@ -452,23 +474,30 @@ private fun YouTubeApp(
                             contentColor = MaterialTheme.colorScheme.onSurface
                         ) {
                             NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
+                                selected = selectedTab == 0 && selectedChannel == null,
+                                onClick = {
+                                    selectedTab = 0
+                                    selectedChannel = null
+                                },
                                 icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                                 label = { Text("Home") },
                                 modifier = Modifier.testTag("nav_home_tab")
                             )
                             NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
+                                selected = selectedTab == 1 && selectedChannel == null,
+                                onClick = {
+                                    selectedTab = 1
+                                    selectedChannel = null
+                                },
                                 icon = { Icon(Icons.Default.Subscriptions, contentDescription = "Channels") },
                                 label = { Text("Channels") },
                                 modifier = Modifier.testTag("nav_channels_tab")
                             )
                             NavigationBarItem(
-                                selected = selectedTab == 2,
+                                selected = selectedTab == 2 && selectedChannel == null,
                                 onClick = {
                                     selectedTab = 2
+                                    selectedChannel = null
                                     history = WatchHistoryStore.load(context)
                                 },
                                 icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Library") },
@@ -476,8 +505,11 @@ private fun YouTubeApp(
                                 modifier = Modifier.testTag("nav_library_tab")
                             )
                             NavigationBarItem(
-                                selected = selectedTab == 3,
-                                onClick = { selectedTab = 3 },
+                                selected = selectedTab == 3 && selectedChannel == null,
+                                onClick = {
+                                    selectedTab = 3
+                                    selectedChannel = null
+                                },
                                 icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
                                 label = { Text("Search") },
                                 modifier = Modifier.testTag("nav_search_tab")
@@ -488,6 +520,17 @@ private fun YouTubeApp(
             }
         ) { padding ->
             when {
+                selectedChannel != null -> {
+                    ChannelDetailScreen(
+                        channel = selectedChannel!!,
+                        allVideos = approvedVideos,
+                        onPlayVideo = { video ->
+                            playVideo(video)
+                        },
+                        onBack = { selectedChannel = null }
+                    )
+                }
+
                 activeVideo != null && !isMiniPlayer -> {
                     PlayerScreen(
                         video = activeVideo!!,
@@ -503,6 +546,10 @@ private fun YouTubeApp(
                             customViewCallback?.onCustomViewHidden()
                             customFullscreenView = null
                             customViewCallback = null
+                        },
+                        onOpenChannel = { chId, chTitle, chAvatar ->
+                            isMiniPlayer = true
+                            openChannel(chId, chTitle, chAvatar)
                         }
                     )
                 }
@@ -514,7 +561,10 @@ private fun YouTubeApp(
                         isLoading = isFeedLoading,
                         errorMessage = feedErrorMessage,
                         onPlayVideo = { playVideo(it) },
-                        onRefresh = { refreshFeed() }
+                        onRefresh = { refreshFeed() },
+                        onOpenChannel = { chId, chTitle, chAvatar ->
+                            openChannel(chId, chTitle, chAvatar)
+                        }
                     )
                 }
 
@@ -522,7 +572,10 @@ private fun YouTubeApp(
                     ChannelManagerScreen(
                         padding = padding,
                         onPlay = { video -> playVideo(video) },
-                        onVideosLoaded = { approvedVideos = it }
+                        onVideosLoaded = { approvedVideos = it },
+                        onOpenChannel = { chId, chTitle, chAvatar ->
+                            openChannel(chId, chTitle, chAvatar)
+                        }
                     )
                 }
 
@@ -554,7 +607,10 @@ private fun YouTubeApp(
                         cachedVideos = approvedVideos,
                         query = searchQuery,
                         onQueryChange = { searchQuery = it },
-                        onPlay = { playVideo(it) }
+                        onPlay = { playVideo(it) },
+                        onOpenChannel = { chId, chTitle, chAvatar ->
+                            openChannel(chId, chTitle, chAvatar)
+                        }
                     )
                 }
             }

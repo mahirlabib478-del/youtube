@@ -1,5 +1,6 @@
 package com.mahirlabib.youtube
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -60,7 +61,8 @@ import kotlinx.coroutines.launch
 fun ChannelManagerScreen(
     padding: PaddingValues,
     onPlay: (YouTubeVideo) -> Unit,
-    onVideosLoaded: (List<YouTubeVideo>) -> Unit
+    onVideosLoaded: (List<YouTubeVideo>) -> Unit,
+    onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -97,24 +99,24 @@ fun ChannelManagerScreen(
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Enter a 24-character YouTube Channel ID (starts with UC). Real channel title and avatar will be fetched automatically.",
+                        text = "Enter any @handle, channel name, YouTube link, or channel ID. Real channel title and avatar will be fetched automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = inputChannelId,
-                        onValueChange = { inputChannelId = it.trim() },
+                        onValueChange = { inputChannelId = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("admin_channel_id_input"),
-                        label = { Text("Channel ID (e.g. UC_x5XG1OV2P6uZZ5FSM9Ttw)") },
-                        placeholder = { Text("UCxxxxxxxxxxxxxxxxxxxxxx") },
+                        label = { Text("Channel name, @handle, URL, or ID") },
+                        placeholder = { Text("e.g. @Veritasium, @mkbhd, Fireship, or URL") },
                         singleLine = true
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Popular Channel Presets:",
+                        text = "Quick Presets:",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -127,15 +129,17 @@ fun ChannelManagerScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf(
-                            "Google Devs" to "UC_x5XG1OV2P6uZZ5FSM9Ttw",
-                            "Android Devs" to "UCVHFbqXqoYvEWM1Ddxl0QDg",
-                            "Veritasium" to "UCsTcErHg8oDvUnTzoqsYeNw",
-                            "The Verge" to "UCBcRF18aGmBrDflS45305iw",
-                            "Kurzgesagt" to "UCsXVk37bltHxD1rDPwtNM8Q",
-                            "Blender" to "UCSMOQeBJ2RAnuFungnQOxLg"
-                        ).forEach { (name, id) ->
+                            "Veritasium" to "@Veritasium",
+                            "MKBHD" to "@mkbhd",
+                            "Fireship" to "@Fireship",
+                            "Google Devs" to "@GoogleDevelopers",
+                            "Android Devs" to "@AndroidDevelopers",
+                            "The Verge" to "@TheVerge",
+                            "Kurzgesagt" to "@Kurzgesagt",
+                            "Blender" to "@BlenderOfficial"
+                        ).forEach { (name, handle) ->
                             Surface(
-                                onClick = { inputChannelId = id },
+                                onClick = { inputChannelId = handle },
                                 shape = RoundedCornerShape(8.dp),
                                 color = MaterialTheme.colorScheme.surfaceContainerHighest
                             ) {
@@ -150,26 +154,31 @@ fun ChannelManagerScreen(
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = {
-                            val id = inputChannelId.trim()
-                            if (!isValidYouTubeChannelId(id)) {
-                                statusMessage = "Invalid ID. Channel ID must start with 'UC' and contain 24 characters."
+                            val input = inputChannelId.trim()
+                            if (input.isBlank()) {
+                                statusMessage = "Please enter a channel name, @handle, or URL."
                                 return@Button
                             }
                             scope.launch {
                                 isAddingChannel = true
-                                statusMessage = "Fetching channel details…"
-                                val details = YouTubeDataRepository.fetchChannelDetails(BuildConfig.YOUTUBE_API_KEY, id)
-                                channels = ApprovedChannelStore.add(context, id, details.title, details.avatarUrl)
-                                inputChannelId = ""
-                                statusMessage = "Added \"${details.title}\"! Loading latest videos…"
+                                statusMessage = "Searching and resolving channel \"$input\"…"
                                 runCatching {
-                                    YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY)
-                                }.onSuccess { vids ->
-                                    loadedVideos = vids
-                                    onVideosLoaded(vids)
-                                    statusMessage = "Added \"${details.title}\" and updated feed with ${vids.size} videos!"
-                                }.onFailure {
-                                    statusMessage = "Added \"${details.title}\" to saved channels."
+                                    YouTubeDataRepository.resolveChannelInput(context, BuildConfig.YOUTUBE_API_KEY, input)
+                                }.onSuccess { details ->
+                                    channels = ApprovedChannelStore.add(context, details.channelId, details.title, details.avatarUrl)
+                                    inputChannelId = ""
+                                    statusMessage = "Added \"${details.title}\"! Updating feed…"
+                                    runCatching {
+                                        YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY)
+                                    }.onSuccess { vids ->
+                                        loadedVideos = vids
+                                        onVideosLoaded(vids)
+                                        statusMessage = "Added \"${details.title}\" and updated feed with ${vids.size} videos!"
+                                    }.onFailure {
+                                        statusMessage = "Added \"${details.title}\" to saved channels."
+                                    }
+                                }.onFailure { error ->
+                                    statusMessage = error.message ?: "Failed to find channel. Try entering the @handle or full channel URL."
                                 }
                                 isAddingChannel = false
                             }
@@ -183,7 +192,7 @@ fun ChannelManagerScreen(
                         if (isAddingChannel) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
-                            Text("Adding Channel…")
+                            Text("Finding Channel…")
                         } else {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
@@ -291,7 +300,13 @@ fun ChannelManagerScreen(
                         size = 44.dp
                     )
 
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                onOpenChannel(channel.channelId, channel.title, channel.avatarUrl)
+                            }
+                    ) {
                         Text(
                             text = channel.title,
                             style = MaterialTheme.typography.titleSmall,

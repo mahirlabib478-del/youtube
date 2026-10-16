@@ -25,9 +25,12 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,15 +61,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * YouTube-style search feed that searches across all videos and channels.
- * Features:
- * - Real-time filtering as you type, plus Enter/Search keyboard action.
- * - Matching channel header card for quick channel discovery.
- * - Comprehensive multi-field matching (title, channel, description).
- * - Direct embedded playback on tap.
+ * YouTube-style search feed with recent search history, topic suggestions,
+ * live public YouTube search, and channel profile navigation.
  */
 @Composable
 fun SearchFeed(
@@ -73,7 +74,8 @@ fun SearchFeed(
     cachedVideos: List<YouTubeVideo>,
     query: String,
     onQueryChange: (String) -> Unit,
-    onPlay: (YouTubeVideo) -> Unit
+    onPlay: (YouTubeVideo) -> Unit,
+    onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,9 +84,9 @@ fun SearchFeed(
 
     var isSearching by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf(cachedVideos) }
-    var selectedFilter by remember { mutableStateOf("All") }
+    var recentSearches by remember { mutableStateOf(SearchHistoryStore.load(context)) }
 
-    val filterChips = listOf("All", "Android", "Google", "Science", "Blender", "Tutorial", "Tech")
+    val filterChips = listOf("All", "Android", "Google", "Science", "Blender", "Tutorial", "Tech", "Physics")
 
     fun performSearch(q: String) {
         val trimmed = q.trim()
@@ -92,6 +94,9 @@ fun SearchFeed(
             searchResults = cachedVideos
             return
         }
+
+        // Save to persistent recent search history
+        recentSearches = SearchHistoryStore.add(context, trimmed)
 
         scope.launch {
             isSearching = true
@@ -116,7 +121,6 @@ fun SearchFeed(
         }
     }
 
-    // Live search when query changes
     // Live search when query changes - instant local match + debounced online YouTube search
     LaunchedEffect(query, cachedVideos) {
         val trimmed = query.trim()
@@ -133,7 +137,7 @@ fun SearchFeed(
         searchResults = localFiltered
 
         // 2. Debounced online YouTube search
-        kotlinx.coroutines.delay(650)
+        delay(650)
         isSearching = true
         runCatching {
             YouTubeDataRepository.searchChannelVideos(context, BuildConfig.YOUTUBE_API_KEY, trimmed)
@@ -258,6 +262,117 @@ fun SearchFeed(
             }
         }
 
+        // When Query is Blank: Show Recent Searches (রিসেন্ট সার্চ হিস্ট্রি)
+        if (query.isBlank()) {
+            if (recentSearches.isNotEmpty()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("recent_searches_list"),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Recent Searches",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            TextButton(
+                                onClick = {
+                                    SearchHistoryStore.clear(context)
+                                    recentSearches = emptyList()
+                                }
+                            ) {
+                                Text("Clear All")
+                            }
+                        }
+                    }
+
+                    items(recentSearches, key = { it }) { recent ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onQueryChange(recent)
+                                    performSearch(recent)
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(16.dp))
+                                Text(
+                                    text = recent,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    recentSearches = SearchHistoryStore.remove(context, recent)
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(54.dp)
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            text = "Search YouTube",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Find videos, topics, and channels from all across YouTube.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            return
+        }
+
         // Results Count Header
         Row(
             modifier = Modifier
@@ -267,8 +382,7 @@ fun SearchFeed(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (query.isBlank()) "All Videos (${searchResults.size})"
-                else "Results for \"$query\" (${searchResults.size})",
+                text = "Results for \"$query\" (${searchResults.size})",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -310,11 +424,15 @@ fun SearchFeed(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // If a channel matches, render a dedicated YouTube Channel header
+                // If a channel matches, render a dedicated YouTube Channel header (tappable to view channel)
                 if (matchingChannel != null) {
                     item(key = "matching_channel_${matchingChannel.channelId}") {
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onOpenChannel(matchingChannel.channelId, matchingChannel.title, matchingChannel.avatarUrl)
+                                },
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                             shape = RoundedCornerShape(16.dp)
                         ) {
@@ -332,13 +450,22 @@ fun SearchFeed(
                                 )
 
                                 Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = matchingChannel.title,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Verified,
+                                            contentDescription = "Verified",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                     Text(
-                                        text = matchingChannel.title,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "Saved Channel • Videos below",
+                                        text = "Saved Channel • Tap to view profile & uploads",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -404,7 +531,10 @@ fun SearchFeed(
                                 ChannelAvatar(
                                     channelTitle = video.channelTitle,
                                     avatarUrl = video.channelAvatarUrl,
-                                    size = 36.dp
+                                    size = 36.dp,
+                                    modifier = Modifier.clickable {
+                                        onOpenChannel(video.channelId, video.channelTitle, video.channelAvatarUrl)
+                                    }
                                 )
 
                                 Column(modifier = Modifier.weight(1f)) {
@@ -419,7 +549,10 @@ fun SearchFeed(
                                     Text(
                                         text = "${video.channelTitle} • ${formatRelativeTime(video.publishedAt)}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.clickable {
+                                            onOpenChannel(video.channelId, video.channelTitle, video.channelAvatarUrl)
+                                        }
                                     )
                                 }
                             }

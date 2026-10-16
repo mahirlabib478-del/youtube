@@ -258,15 +258,11 @@ private fun YouTubeApp() {
                 feedPageTokens = tokens
                 feedHasMore = tokens.values.any { !it.isNullOrBlank() }
                 feedRefreshVersion++
-                feedErrorMessage = when {
-                    videos.isEmpty() && failedChannels > 0 -> "Couldn't refresh saved channels. Check your connection and pull down to retry."
-                    videos.isEmpty() -> "No public videos found for the saved channels."
-                    failedChannels > 0 -> "Some channels couldn't refresh. Showing available videos; pull down to retry."
-                    else -> null
-                }
+                // Keep transient partial-channel failures quiet while videos remain visible.
+                feedErrorMessage = if (videos.isEmpty() && failedChannels > 0) "Couldn't refresh saved channels." else null
             }.onFailure { err ->
-                // Keep cached feed visible if refresh fails.
-                feedErrorMessage = err.message ?: "Failed to refresh feed."
+                // Keep cached feed visible without interruptive notices on transient failures.
+                feedErrorMessage = null
                 }
             } finally {
                 isFeedLoading = false
@@ -301,11 +297,9 @@ private fun YouTubeApp() {
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = nextTokens
                 feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
-                feedErrorMessage = if (hasFailedChannels) {
-                    "Some channels couldn't load more videos. Scroll to retry."
-                } else null
+                feedErrorMessage = null
             }.onFailure { err ->
-                feedErrorMessage = err.message ?: "Failed to load more videos. Scroll to retry."
+                feedErrorMessage = null
                 }
             } finally {
                 isFeedLoadingMore = false

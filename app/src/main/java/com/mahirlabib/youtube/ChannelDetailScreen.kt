@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,6 +63,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collect
 
 data class ChannelDetailState(
     val channelId: String,
@@ -133,29 +136,44 @@ fun ChannelDetailScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore, continuationToken, hasMoreVideos, allowLoadMore, loadMoreRetryKey) {
-        if (shouldLoadMore && !isLoadingMore && hasMoreVideos && continuationToken != null && allowLoadMore) {
-            isLoadingMore = true
-            try {
-                val nextPage = YouTubeDataRepository.fetchChannelVideosPage(
-                    channelId = channel.channelId,
-                    channelAvatarUrl = channel.avatarUrl,
-                    continuationToken = continuationToken
-                )
-                if (nextPage.videos.isNotEmpty()) {
-                    channelVideos = (channelVideos + nextPage.videos).distinctBy { it.videoId }
+    LaunchedEffect(channel.channelId, loadMoreRetryKey) {
+        // Observe scroll position and pagination state in one long-lived collector.
+        // A normal scroll/layout change must not cancel an in-flight network request.
+        snapshotFlow {
+            Triple(
+                shouldLoadMore,
+                continuationToken,
+                hasMoreVideos && allowLoadMore
+            )
+        }.distinctUntilChanged().collect { (nearEnd, token, canLoadMore) ->
+            if (nearEnd && canLoadMore && token != null && !isLoadingMore) {
+                isLoadingMore = true
+                try {
+                    val nextPage = YouTubeDataRepository.fetchChannelVideosPage(
+                        channelId = channel.channelId,
+                        channelAvatarUrl = channel.avatarUrl,
+                        continuationToken = token
+                    )
+                    if (nextPage.videos.isNotEmpty()) {
+                        channelVideos = (channelVideos + nextPage.videos).distinctBy { it.videoId }
+                    }
+                    continuationToken = nextPage.continuationToken
+                    hasMoreVideos = nextPage.continuationToken != null
+                    if (nextPage.videos.isEmpty() && nextPage.continuationToken != null) {
+                        // Prevent an endless loop if the API returns an empty page with a token.
+                        allowLoadMore = false
+                        uploadsError = "No videos were returned for this page. Tap retry to continue."
+                    } else if (nextPage.continuationToken == null) {
+                        hasMoreVideos = false
+                    }
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    uploadsError = error.message ?: "Could not load more videos. Try again later."
+                    allowLoadMore = false
+                } finally {
+                    isLoadingMore = false
                 }
-                continuationToken = nextPage.continuationToken
-                if (nextPage.continuationToken == null) {
-                    hasMoreVideos = false
-                }
-            } catch (error: kotlinx.coroutines.CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                uploadsError = error.message ?: "Could not load more videos. Try again later."
-                allowLoadMore = false
-            } finally {
-                isLoadingMore = false
             }
         }
     }

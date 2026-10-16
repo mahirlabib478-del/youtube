@@ -104,7 +104,9 @@ fun PlayerScreen(
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> },
-    miniMode: Boolean = false
+    miniMode: Boolean = false,
+    modifier: Modifier = Modifier,
+    onExpandMiniPlayer: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -207,12 +209,14 @@ fun PlayerScreen(
 
     Box(
         modifier = if (miniMode) {
-            // Keep the WebView at the activity's real content size while mini-player
-            // controls are shown. Shrinking it to 1dp can pause embedded playback.
-            // Retain the same composed WebView so expanding does not restart playback.
-            Modifier.fillMaxSize().alpha(0f).testTag("player_screen_mini_host")
+            modifier
+                .width(200.dp)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black)
+                .testTag("player_screen_mini_host")
         } else {
-            Modifier
+            modifier
                 .fillMaxSize()
                 .then(
                     if (isFullscreenExpanded) Modifier.background(Color.Black)
@@ -222,7 +226,7 @@ fun PlayerScreen(
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (!isFullscreenExpanded) {
+            if (!isFullscreenExpanded && !miniMode) {
                 // Top Back Navigation bar
                 Row(
                     modifier = Modifier
@@ -259,18 +263,42 @@ fun PlayerScreen(
 
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = if (isFullscreenExpanded) {
-                    Modifier
-                        .fillMaxSize()
-                        .background(Color.Black)
-                        .testTag("player_fullscreen_mode")
+                modifier = if (isFullscreenExpanded || miniMode) {
+                    Modifier.fillMaxSize().background(Color.Black)
                 } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(16f / 9f)
-                        .background(Color.Black)
+                    Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                 }
             ) {
+                if (miniMode) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().clickable { onExpandMiniPlayer() }
+                    ) {
+                        YouTubeEmbedPlayer(
+                            videoId = videoId,
+                            modifier = Modifier.fillMaxSize(),
+                            autoplay = true,
+                            onShowCustomView = onShowCustomView,
+                            onHideCustomView = onHideCustomView
+                        )
+                        IconButton(
+                            onClick = onClose,
+                            modifier = Modifier.align(Alignment.TopEnd).size(36.dp)
+                                .background(Color(0x99000000), CircleShape)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Close mini player", tint = Color.White)
+                        }
+                    }
+                } else {
+                    YouTubeEmbedPlayer(
+                        videoId = videoId,
+                        modifier = Modifier.fillMaxSize(),
+                        autoplay = true,
+                        onShowCustomView = onShowCustomView,
+                        onHideCustomView = onHideCustomView
+                    )
+                }
+
+                if (!miniMode && isFullscreenExpanded) {
                 YouTubeEmbedPlayer(
                     videoId = videoId,
                     modifier = Modifier.fillMaxSize(),

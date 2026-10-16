@@ -369,11 +369,11 @@ object YouTubeDataRepository {
 
             // Resolve a direct channel ID or /channel/ URL without scraping YouTube HTML.
             if (isValidYouTubeChannelId(input)) return@withContext fetchChannelDetails(apiKey, input)
-            val channelUrlMatch = Regex("""youtube\\.com/channel/(UC[A-Za-z0-9_-]{22})""").find(input)
+            val channelUrlMatch = Regex("""youtube\.com/channel/(UC[A-Za-z0-9_-]{22})""").find(input)
             if (channelUrlMatch != null) return@withContext fetchChannelDetails(apiKey, channelUrlMatch.groupValues[1])
 
             // The official channels.list forHandle parameter supports @handles.
-            val handleMatch = Regex("""(?:youtube\\.com/)?@([A-Za-z0-9._-]+)""").find(input)
+            val handleMatch = Regex("""(?:youtube\.com/)?@([A-Za-z0-9._-]+)""").find(input)
             val handle = handleMatch?.groupValues?.get(1) ?: input.takeIf { it.startsWith("@") }?.removePrefix("@")
             if (!handle.isNullOrBlank()) {
                 val response = getJson("https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&forHandle=${encode(handle)}&key=${encode(apiKey)}")
@@ -382,7 +382,7 @@ object YouTubeDataRepository {
             }
 
             // A video URL resolves through the official videos.list endpoint.
-            val videoMatch = Regex("""(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})""").find(input)
+            val videoMatch = Regex("""(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})""").find(input)
             if (videoMatch != null) {
                 val response = getJson("https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${encode(videoMatch.groupValues[1])}&key=${encode(apiKey)}")
                 val id = response.optJSONArray("items")?.optJSONObject(0)?.optJSONObject("snippet")?.optString("channelId").orEmpty()
@@ -396,7 +396,7 @@ object YouTubeDataRepository {
                 val firstId = items.optJSONObject(0)?.optJSONObject("id")?.optString("channelId").orEmpty()
                 if (isValidYouTubeChannelId(firstId)) return@withContext fetchChannelDetails(apiKey, firstId)
             }
-            throw IllegalArgumentException("Could not find a YouTube channel for \\"$input\\". Please check the name or handle.")
+            throw IllegalArgumentException("Could not find a YouTube channel for \"$input\". Please check the name or handle.")
         }
 
     /**

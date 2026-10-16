@@ -61,12 +61,27 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import coil.compose.AsyncImage
 import android.view.View
 import android.webkit.WebChromeClient
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import kotlinx.coroutines.launch
+
+fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Composable
 fun PlayerScreen(
@@ -79,8 +94,33 @@ fun PlayerScreen(
     onHideCustomView: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
     val videoId = video.videoId
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
+
+    LaunchedEffect(isFullscreenExpanded) {
+        val window = activity?.window ?: return@LaunchedEffect
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        if (isFullscreenExpanded) {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            insetsController.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val window = activity?.window
+            if (window != null) {
+                val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+        }
+    }
 
     BackHandler {
         if (isFullscreenExpanded) {
@@ -181,19 +221,50 @@ fun PlayerScreen(
                 )
 
                 if (isFullscreenExpanded) {
-                    IconButton(
-                        onClick = { isFullscreenExpanded = false },
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(16.dp)
-                            .background(Color(0x88000000), CircleShape)
-                            .testTag("exit_fullscreen_mode_button")
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .background(Color(0x99000000))
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.FullscreenExit,
-                            contentDescription = "Exit Fullscreen",
-                            tint = Color.White
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            IconButton(
+                                onClick = { isFullscreenExpanded = false },
+                                modifier = Modifier.testTag("fullscreen_back_icon")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Exit Fullscreen",
+                                    tint = Color.White
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = video.title,
+                                color = Color.White,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { isFullscreenExpanded = false },
+                            modifier = Modifier.testTag("exit_fullscreen_mode_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "Exit Fullscreen",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -248,30 +319,11 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
-                        if (video.channelAvatarUrl.isNotBlank()) {
-                            AsyncImage(
-                                model = video.channelAvatarUrl,
-                                contentDescription = video.channelTitle,
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = CircleShape,
-                                color = Color(0xFFFF0033)
-                            ) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = video.channelTitle.take(1).uppercase(),
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                        }
+                        ChannelAvatar(
+                            channelTitle = video.channelTitle,
+                            avatarUrl = video.channelAvatarUrl,
+                            size = 40.dp
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(

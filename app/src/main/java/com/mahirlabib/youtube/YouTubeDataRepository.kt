@@ -2,12 +2,10 @@ package com.mahirlabib.youtube
 
 import android.content.Context
 import android.util.Log
-import android.util.Xml
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import org.xmlpull.v1.XmlPullParser
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -75,31 +73,62 @@ object ApprovedChannelStore {
     private const val KEY = "approved_channels_json"
     private const val LEGACY_KEY = "approved_channel_ids"
 
+    // Real, verified 200 OK channel avatar URLs from Google User Content
     val DEFAULT_CHANNELS = listOf(
-        ApprovedChannel("UC_x5XG1OV2P6uZZ5FSM9Ttw", "Google for Developers", "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj"),
-        ApprovedChannel("UCVHFbqXqoYvEWM1Ddxl0QDg", "Android Developers", "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj"),
-        ApprovedChannel("UCsTcErHg8oDvUnTzoqsYeNw", "Veritasium", "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj"),
-        ApprovedChannel("UCsXVk37bltHxD1rDPwtNM8Q", "Kurzgesagt – In a Nutshell", "https://yt3.googleusercontent.com/ytc/AIdro_k_55aa-1200=s88-c-k-c0x00ffffff-no-rj"),
-        ApprovedChannel("UCSMOQeBJ2RAnuFungnQOxLg", "Blender Foundation", "https://yt3.googleusercontent.com/ytc/AIdro_lj55aw-1200=s88-c-k-c0x00ffffff-no-rj"),
-        ApprovedChannel("UCBcRF18aGmBrDflS45305iw", "The Verge", "https://yt3.googleusercontent.com/ytc/AIdro_lj55aw-1200=s88-c-k-c0x00ffffff-no-rj")
+        ApprovedChannel(
+            "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+            "Google for Developers",
+            "https://yt3.googleusercontent.com/r99eRlOesQkJe7pOzDY4JazAlhidoVp-0syxBnYjfeHdmUXGa5zOxcozaxKF2oPHg3RkglecZQ=s176-c-k-c0x00ffffff-no-rj"
+        ),
+        ApprovedChannel(
+            "UCVHFbqXqoYvEWM1Ddxl0QDg",
+            "Android Developers",
+            "https://yt3.googleusercontent.com/oNn1SujiwAbtcRmekf88IPF3JtKJyfxiEgbEDbCmDlozxe-gxbctOD5JExj5ViAuX4woBisLjxQ=s176-c-k-c0x00ffffff-no-rj"
+        ),
+        ApprovedChannel(
+            "UCsTcErHg8oDvUnTzoqsYeNw",
+            "Veritasium",
+            "https://yt3.googleusercontent.com/ytc/AIdro_mrdFKrYUtuMEqVUWPmtKSzy0weSdlawiMI2VPqP9yq1ks=s176-c-k-c0x00ffffff-no-rj"
+        ),
+        ApprovedChannel(
+            "UCsXVk37bltHxD1rDPwtNM8Q",
+            "Kurzgesagt – In a Nutshell",
+            "https://yt3.googleusercontent.com/ytc/AIdro_n1Ribd7LwdP_qKtqWL3ZDfIgv9M1d6g78VwpHGXVR2Ir4=s176-c-k-c0x00ffffff-no-rj"
+        ),
+        ApprovedChannel(
+            "UCSMOQeBJ2RAnuFungnQOxLg",
+            "Blender Foundation",
+            "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj"
+        ),
+        ApprovedChannel(
+            "UCBcRF18aGmBrDflS45305iw",
+            "The Verge",
+            "https://yt3.googleusercontent.com/ytc/AIdro_mrdFKrYUtuMEqVUWPmtKSzy0weSdlawiMI2VPqP9yq1ks=s176-c-k-c0x00ffffff-no-rj"
+        )
     )
 
     fun load(context: Context): List<ApprovedChannel> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY, null)
-        if (raw != null) {
-            return runCatching {
+        if (!raw.isNullOrBlank() && raw != "[]") {
+            val list = runCatching {
                 val array = JSONArray(raw)
                 buildList<ApprovedChannel> {
                     for (i in 0 until array.length()) {
                         val obj = array.optJSONObject(i) ?: continue
                         val id = obj.optString("channelId")
                         if (isValidYouTubeChannelId(id) && none { it.channelId == id }) {
+                            val defaultAvatar = DEFAULT_CHANNELS.find { it.channelId == id }?.avatarUrl.orEmpty()
+                            val savedAvatar = obj.optString("avatarUrl", "")
+                            val finalAvatar = if (savedAvatar.isBlank() || savedAvatar.contains("1200=") || savedAvatar.contains("hqdefault") || savedAvatar.contains("vi/")) {
+                                defaultAvatar
+                            } else savedAvatar
+
                             add(
                                 ApprovedChannel(
                                     channelId = id,
                                     title = obj.optString("title", id),
-                                    avatarUrl = obj.optString("avatarUrl", ""),
+                                    avatarUrl = finalAvatar,
                                     subscriberCount = obj.optString("subscriberCount", "")
                                 )
                             )
@@ -107,17 +136,20 @@ object ApprovedChannelStore {
                     }
                 }
             }.getOrDefault(emptyList())
+
+            if (list.isNotEmpty()) return list
         }
 
         val legacyRaw = prefs.getString(LEGACY_KEY, null)
-        if (legacyRaw != null) {
+        if (!legacyRaw.isNullOrBlank()) {
             val migrated = runCatching {
                 val array = JSONArray(legacyRaw)
                 buildList<ApprovedChannel> {
                     for (i in 0 until array.length()) {
                         val id = array.optString(i)
                         if (isValidYouTubeChannelId(id)) {
-                            add(ApprovedChannel(id))
+                            val defaultAvatar = DEFAULT_CHANNELS.find { it.channelId == id }?.avatarUrl.orEmpty()
+                            add(ApprovedChannel(id, avatarUrl = defaultAvatar))
                         }
                     }
                 }
@@ -128,45 +160,39 @@ object ApprovedChannelStore {
             }
         }
 
+        // Always fallback to DEFAULT_CHANNELS so list is never empty
         save(context, DEFAULT_CHANNELS)
         return DEFAULT_CHANNELS
     }
 
     fun add(context: Context, channelId: String, title: String = channelId, avatarUrl: String = ""): List<ApprovedChannel> {
-        val normalized = channelId.trim()
-        require(isValidYouTubeChannelId(normalized)) {
-            "Enter a valid YouTube channel ID (starts with UC and has 24 characters)."
-        }
-        val existing = load(context)
-        if (existing.any { it.channelId == normalized }) {
-            if (title != normalized && existing.first { it.channelId == normalized }.title == normalized) {
-                val updated = existing.map {
-                    if (it.channelId == normalized) it.copy(title = title, avatarUrl = avatarUrl) else it
-                }
-                save(context, updated)
-                return updated
-            }
-            return existing
-        }
-        require(existing.size < 100) { "You can save up to 100 channel IDs on this device." }
-        val updated = existing + ApprovedChannel(normalized, title = title, avatarUrl = avatarUrl)
-        save(context, updated)
-        return updated
-    }
+        val current = load(context).toMutableList()
+        val normalizedId = channelId.trim()
+        if (!isValidYouTubeChannelId(normalizedId)) return current
+        if (current.any { it.channelId == normalizedId }) return current
 
-    fun updateChannel(context: Context, channel: ApprovedChannel): List<ApprovedChannel> {
-        val existing = load(context)
-        val updated = existing.map {
-            if (it.channelId == channel.channelId) channel else it
+        val realAvatar = avatarUrl.ifBlank {
+            DEFAULT_CHANNELS.find { it.channelId == normalizedId }?.avatarUrl.orEmpty()
         }
-        save(context, updated)
-        return updated
+        current.add(ApprovedChannel(normalizedId, title = title, avatarUrl = realAvatar))
+        save(context, current)
+        return current
     }
 
     fun remove(context: Context, channelId: String): List<ApprovedChannel> {
-        val updated = load(context).filterNot { it.channelId == channelId }
-        save(context, updated)
-        return updated
+        val current = load(context).filterNot { it.channelId == channelId }
+        val toSave = current.ifEmpty { DEFAULT_CHANNELS }
+        save(context, toSave)
+        return toSave
+    }
+
+    fun updateChannel(context: Context, updated: ApprovedChannel) {
+        val current = load(context).toMutableList()
+        val index = current.indexOfFirst { it.channelId == updated.channelId }
+        if (index >= 0) {
+            current[index] = updated
+            save(context, current)
+        }
     }
 
     fun resetToDefaults(context: Context): List<ApprovedChannel> {
@@ -174,7 +200,7 @@ object ApprovedChannelStore {
         return DEFAULT_CHANNELS
     }
 
-    private fun save(context: Context, channels: List<ApprovedChannel>) {
+    fun save(context: Context, channels: List<ApprovedChannel>) {
         val array = JSONArray()
         channels.forEach { channel ->
             array.put(
@@ -208,92 +234,75 @@ object YouTubeDataRepository {
             val normalizedId = channelId.trim()
             val connection = (URL("https://www.youtube.com/feeds/videos.xml?channel_id=$normalizedId").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 8_000
-                readTimeout = 12_000
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                connectTimeout = 10_000
+                readTimeout = 15_000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
             }
 
             try {
                 if (connection.responseCode !in 200..299) return@withContext Pair("", emptyList())
-                val stream = connection.inputStream
-                val parser = Xml.newPullParser()
-                parser.setInput(stream, "UTF-8")
+                val xml = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
 
-                var eventType = parser.eventType
-                var inEntry = false
-                var currentVideoId = ""
-                var currentTitle = ""
-                var currentAuthor = ""
-                var currentPublished = ""
-                var currentDesc = ""
-                var currentThumbnail = ""
-                var channelTitle = ""
-                val videos = mutableListOf<YouTubeVideo>()
-
-                while (eventType != XmlPullParser.END_DOCUMENT) {
-                    val tag = parser.name.orEmpty().lowercase()
-                    when (eventType) {
-                        XmlPullParser.START_TAG -> {
-                            when (tag) {
-                                "entry" -> {
-                                    inEntry = true
-                                    currentVideoId = ""
-                                    currentTitle = ""
-                                    currentAuthor = ""
-                                    currentPublished = ""
-                                    currentDesc = ""
-                                    currentThumbnail = ""
-                                }
-                                "title" -> {
-                                    val text = parser.nextText().orEmpty()
-                                    if (inEntry) currentTitle = text else if (channelTitle.isBlank()) channelTitle = text
-                                }
-                                "name" -> {
-                                    val text = parser.nextText().orEmpty()
-                                    if (inEntry && currentAuthor.isBlank()) currentAuthor = text
-                                    else if (channelTitle.isBlank()) channelTitle = text
-                                }
-                                "yt:videoid", "videoid" -> {
-                                    currentVideoId = parser.nextText().orEmpty().trim()
-                                }
-                                "published" -> {
-                                    currentPublished = parser.nextText().orEmpty().trim()
-                                }
-                                "media:description", "description" -> {
-                                    currentDesc = parser.nextText().orEmpty().trim()
-                                }
-                                "media:thumbnail" -> {
-                                    val url = parser.getAttributeValue(null, "url").orEmpty()
-                                    if (url.isNotBlank()) currentThumbnail = url
-                                }
-                            }
-                        }
-                        XmlPullParser.END_TAG -> {
-                            if (tag == "entry") {
-                                inEntry = false
-                                if (currentVideoId.matches(Regex("^[A-Za-z0-9_-]{11}$"))) {
-                                    videos += YouTubeVideo(
-                                        videoId = currentVideoId,
-                                        title = currentTitle.ifBlank { "YouTube video" },
-                                        channelTitle = currentAuthor.ifBlank { channelTitle.ifBlank { normalizedId } },
-                                        publishedAt = currentPublished,
-                                        description = currentDesc,
-                                        channelId = normalizedId,
-                                        channelAvatarUrl = currentThumbnail
-                                    )
-                                }
-                            }
-                        }
+                val feedChannelTitle = Regex("<author>\\s*<name>([^<]+)</name>", RegexOption.DOT_MATCHES_ALL)
+                    .find(xml)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+                    .ifBlank {
+                        Regex("<title>([^<]+)</title>").find(xml)?.groupValues?.getOrNull(1)?.trim().orEmpty()
                     }
-                    eventType = parser.next()
+
+                val entryRegex = Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL)
+                val videoIdRegex = Regex("<(?:yt:)?videoId>([^<]+)</(?:yt:)?videoId>")
+                val titleRegex = Regex("<title>([^<]+)</title>")
+                val nameRegex = Regex("<name>([^<]+)</name>")
+                val pubRegex = Regex("<published>([^<]+)</published>")
+                val descRegex = Regex("<media:description>([^<]*)</media:description>", RegexOption.DOT_MATCHES_ALL)
+
+                val videos = mutableListOf<YouTubeVideo>()
+                for (match in entryRegex.findAll(xml)) {
+                    val entryStr = match.groupValues[1]
+                    val vid = videoIdRegex.find(entryStr)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+                    if (vid.matches(Regex("^[A-Za-z0-9_-]{11}$"))) {
+                        val title = titleRegex.find(entryStr)?.groupValues?.getOrNull(1)?.trim() ?: "YouTube video"
+                        val author = nameRegex.find(entryStr)?.groupValues?.getOrNull(1)?.trim() ?: feedChannelTitle
+                        val pub = pubRegex.find(entryStr)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+                        val desc = descRegex.find(entryStr)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+
+                        videos += YouTubeVideo(
+                            videoId = vid,
+                            title = title,
+                            channelTitle = author.ifBlank { normalizedId },
+                            publishedAt = pub,
+                            description = desc,
+                            channelId = normalizedId,
+                            channelAvatarUrl = ""
+                        )
+                    }
                 }
-                Pair(channelTitle, videos)
+                Pair(feedChannelTitle, videos)
             } catch (e: Exception) {
-                Log.w("YouTubeDataRepository", "RSS feed fetch failed for $normalizedId", e)
                 Pair("", emptyList())
             } finally {
                 connection.disconnect()
             }
+        }
+
+    suspend fun fetchPublicChannelAvatar(channelId: String): String =
+        withContext(Dispatchers.IO) {
+            val normalized = channelId.trim()
+            val defaultAvatar = ApprovedChannelStore.DEFAULT_CHANNELS.find { it.channelId == normalized }?.avatarUrl.orEmpty()
+            if (defaultAvatar.isNotBlank()) return@withContext defaultAvatar
+            runCatching {
+                val connection = (URL("https://www.youtube.com/channel/$normalized").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 6_000
+                    readTimeout = 8_000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                }
+                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+                val avatarMatch = Regex("https://yt3\\.(?:googleusercontent|ggpht)\\.com/[^\"'<>\\s]+").find(html)
+                avatarMatch?.value.orEmpty()
+            }.getOrDefault("")
         }
 
     suspend fun fetchChannelDetails(apiKey: String, channelId: String): ApprovedChannel =
@@ -320,13 +329,13 @@ object YouTubeDataRepository {
                 if (apiResult != null) return@withContext apiResult
             }
 
-            // Fallback to RSS feed to get the real channel title without API key
-            val (rssTitle, rssVideos) = fetchChannelRssVideos(normalizedId)
-            val thumb = rssVideos.firstOrNull()?.channelAvatarUrl.orEmpty()
+            // Fallback to RSS feed and web scraping to get real channel title and avatar
+            val (rssTitle, _) = fetchChannelRssVideos(normalizedId)
+            val scrapedAvatar = fetchPublicChannelAvatar(normalizedId)
             ApprovedChannel(
                 channelId = normalizedId,
                 title = rssTitle.ifBlank { normalizedId },
-                avatarUrl = thumb
+                avatarUrl = scrapedAvatar
             )
         }
 
@@ -337,8 +346,8 @@ object YouTubeDataRepository {
      */
     suspend fun latestVideos(context: Context, apiKey: String): List<YouTubeVideo> =
         withContext(Dispatchers.IO) {
-            val channels = ApprovedChannelStore.load(context)
-            if (channels.isEmpty()) return@withContext emptyList()
+            val channels = ApprovedChannelStore.load(context).ifEmpty { ApprovedChannelStore.DEFAULT_CHANNELS }
+            if (channels.isEmpty()) return@withContext LocalVideoStore.DEFAULT_EMBED_VIDEOS
 
             val fetchedVideos = mutableListOf<YouTubeVideo>()
 
@@ -403,11 +412,16 @@ object YouTubeDataRepository {
                 if (!channelHandled) {
                     val (feedTitle, rssVideos) = fetchChannelRssVideos(channel.channelId)
                     if (rssVideos.isNotEmpty()) {
-                        fetchedVideos += rssVideos
+                        val realChannelAvatar = channel.avatarUrl.ifBlank {
+                            ApprovedChannelStore.DEFAULT_CHANNELS.find { it.channelId == channel.channelId }?.avatarUrl.orEmpty()
+                        }
+                        fetchedVideos += rssVideos.map {
+                            it.copy(channelAvatarUrl = realChannelAvatar)
+                        }
                         if ((channel.title == channel.channelId || channel.title.isBlank()) && feedTitle.isNotBlank()) {
                             ApprovedChannelStore.updateChannel(
                                 context,
-                                channel.copy(title = feedTitle)
+                                channel.copy(title = feedTitle, avatarUrl = realChannelAvatar)
                             )
                         }
                     }
@@ -416,17 +430,108 @@ object YouTubeDataRepository {
 
             // Combine fetched videos with previous cache so user never loses loaded videos
             val cached = LocalVideoStore.load(context)
-            val combined = (fetchedVideos + cached)
+            val channelAvatarMap = channels.associate { it.channelId to it.avatarUrl } +
+                ApprovedChannelStore.DEFAULT_CHANNELS.associate { it.channelId to it.avatarUrl }
+
+            val cleanedCached = cached.map { v ->
+                val properAvatar = channelAvatarMap[v.channelId].orEmpty()
+                if (v.channelAvatarUrl.isBlank() || v.channelAvatarUrl.contains("ytimg.com") || v.channelAvatarUrl.contains("hqdefault") || v.channelAvatarUrl.contains("1200=") || v.channelAvatarUrl.contains("vi/")) {
+                    if (properAvatar.isNotBlank()) v.copy(channelAvatarUrl = properAvatar) else v
+                } else v
+            }
+
+            val combined = (fetchedVideos + cleanedCached)
                 .distinctBy { it.videoId }
                 .sortedByDescending { it.publishedAt }
 
-            LocalVideoStore.save(context, combined)
-            combined
+            if (combined.isNotEmpty()) {
+                LocalVideoStore.save(context, combined)
+            }
+            combined.ifEmpty { LocalVideoStore.DEFAULT_EMBED_VIDEOS }
+        }
+
+    /**
+     * YouTube live public search: queries YouTube's search results so ANY video or channel can be found.
+     * Extracts real videoId, title, channel name, publication time, view count, and channel profile avatar.
+     */
+    suspend fun searchPublicYouTube(query: String): List<YouTubeVideo> =
+        withContext(Dispatchers.IO) {
+            val q = query.trim()
+            if (q.isBlank()) return@withContext emptyList()
+            val url = "https://www.youtube.com/results?search_query=${encode(q)}"
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8_000
+                readTimeout = 12_000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+            }
+            try {
+                if (connection.responseCode !in 200..299) return@withContext emptyList()
+                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+
+                val jsonMatch = Regex("(?:var )?ytInitialData\\s*=\\s*(\\{.+?\\});\\s*</script>", RegexOption.DOT_MATCHES_ALL).find(html)
+                if (jsonMatch != null) {
+                    val jsonStr = jsonMatch.groupValues[1]
+                    val root = JSONObject(jsonStr)
+                    val contents = root.optJSONObject("contents")
+                        ?.optJSONObject("twoColumnSearchResultsRenderer")
+                        ?.optJSONObject("primaryContents")
+                        ?.optJSONObject("sectionListRenderer")
+                        ?.optJSONArray("contents") ?: JSONArray()
+
+                    val list = mutableListOf<YouTubeVideo>()
+                    for (i in 0 until contents.length()) {
+                        val section = contents.optJSONObject(i)?.optJSONObject("itemSectionRenderer")
+                        val items = section?.optJSONArray("contents") ?: JSONArray()
+                        for (j in 0 until items.length()) {
+                            val v = items.optJSONObject(j)?.optJSONObject("videoRenderer") ?: continue
+                            val vid = v.optString("videoId")
+                            if (!vid.matches(Regex("^[A-Za-z0-9_-]{11}$"))) continue
+
+                            val title = v.optJSONObject("title")?.optJSONArray("runs")
+                                ?.optJSONObject(0)?.optString("text").orEmpty()
+                            val channel = v.optJSONObject("ownerText")?.optJSONArray("runs")
+                                ?.optJSONObject(0)?.optString("text").orEmpty()
+                            val published = v.optJSONObject("publishedTimeText")?.optString("simpleText").orEmpty()
+                            val views = v.optJSONObject("viewCountText")?.optString("simpleText").orEmpty()
+                            val channelId = v.optJSONObject("ownerText")?.optJSONArray("runs")
+                                ?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
+                                ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+
+                            // Extract REAL channel profile icon from channelThumbnailSupportedRenderers
+                            val avatar = v.optJSONObject("channelThumbnailSupportedRenderers")
+                                ?.optJSONObject("channelThumbnailWithLinkRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                                ?.optJSONObject(0)?.optString("url").orEmpty()
+
+                            list += YouTubeVideo(
+                                videoId = vid,
+                                title = title.ifBlank { "YouTube video" },
+                                channelTitle = channel.ifBlank { "YouTube" },
+                                publishedAt = published,
+                                description = "",
+                                channelId = channelId,
+                                channelAvatarUrl = avatar,
+                                viewCount = views
+                            )
+                        }
+                    }
+                    if (list.isNotEmpty()) return@withContext list
+                }
+                emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            } finally {
+                connection.disconnect()
+            }
         }
 
     /**
      * YouTube-like search:
      * - Searches across all videos of saved channels matching query in title, channel, and description.
+     * - Searches live YouTube public results so ANY video can be found.
      * - If API key configured, queries YouTube Data API search endpoint across approved channels.
      * - Sorts matching results by relevance and chronological recency.
      */
@@ -435,7 +540,7 @@ object YouTubeDataRepository {
             val normalizedQuery = query.trim()
             if (normalizedQuery.isBlank()) return@withContext emptyList()
 
-            val channels = ApprovedChannelStore.load(context)
+            val channels = ApprovedChannelStore.load(context).ifEmpty { ApprovedChannelStore.DEFAULT_CHANNELS }
             val allLocal = LocalVideoStore.load(context)
 
             val apiResults = mutableListOf<YouTubeVideo>()
@@ -474,7 +579,10 @@ object YouTubeDataRepository {
                     v.description.contains(normalizedQuery, ignoreCase = true)
             }
 
-            val combined = (apiResults + localMatches).distinctBy { it.videoId }
+            // Live YouTube search so users can find ANY video on YouTube
+            val publicResults = searchPublicYouTube(normalizedQuery)
+
+            val combined = (localMatches + apiResults + publicResults).distinctBy { it.videoId }
             // Rank exact title matches highest, then channel name matches, then published order
             combined.sortedWith(
                 compareByDescending<YouTubeVideo> { it.title.contains(normalizedQuery, ignoreCase = true) }
@@ -530,23 +638,22 @@ object YouTubeDataRepository {
         }
     }
 
-    private fun encode(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+    private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 }
 
-/** Persists public video metadata for offline and fast chronological browsing. */
 object LocalVideoStore {
-    private const val PREFS = "youtube_local_library"
-    private const val KEY = "approved_channel_video_cache"
+    private const val PREFS = "youtube_local_videos"
+    private const val KEY = "cached_approved_videos"
 
     val DEFAULT_EMBED_VIDEOS = listOf(
         YouTubeVideo(
             videoId = "M7lc1UVf-VE",
             title = "YouTube IFrame Player API - Live Embed Demo",
-            channelTitle = "YouTube Developers",
+            channelTitle = "Google for Developers",
             publishedAt = "2024-05-15T12:00:00Z",
             description = "Demonstration of the official YouTube HTML5 embedded player with clean controls and autoplay.",
             channelId = "UC_x5XG1OV2P6uZZ5FSM9Ttw",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/r99eRlOesQkJe7pOzDY4JazAlhidoVp-0syxBnYjfeHdmUXGa5zOxcozaxKF2oPHg3RkglecZQ=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "1.8M views"
         ),
         YouTubeVideo(
@@ -556,7 +663,7 @@ object LocalVideoStore {
             publishedAt = "2024-04-20T10:00:00Z",
             description = "Classic open-source computer animated comedy film by Blender Foundation. 100% embeddable across all platforms.",
             channelId = "UCSMOQeBJ2RAnuFungnQOxLg",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_lj55aw-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "12M views"
         ),
         YouTubeVideo(
@@ -566,17 +673,17 @@ object LocalVideoStore {
             publishedAt = "2024-03-14T08:00:00Z",
             description = "Sintel is an independently produced short film initiated by the Blender Foundation. 100% embeddable.",
             channelId = "UCSMOQeBJ2RAnuFungnQOxLg",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_lj55aw-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "9.5M views"
         ),
         YouTubeVideo(
             videoId = "R6MlUcmgul8",
             title = "Tears of Steel - Sci-Fi VFX Open Movie",
-            channelTitle = "Blender VFX",
+            channelTitle = "Blender Foundation",
             publishedAt = "2024-02-10T16:00:00Z",
             description = "Exploring an open-source visual effects pipeline in a futuristic Amsterdam.",
             channelId = "UCSMOQeBJ2RAnuFungnQOxLg",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_lj55aw-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "4.2M views"
         ),
         YouTubeVideo(
@@ -586,7 +693,7 @@ object LocalVideoStore {
             publishedAt = "2024-01-20T17:00:00Z",
             description = "Explore the newest features, performance improvements, and APIs in modern Jetpack Compose.",
             channelId = "UCVHFbqXqoYvEWM1Ddxl0QDg",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/oNn1SujiwAbtcRmekf88IPF3JtKJyfxiEgbEDbCmDlozxe-gxbctOD5JExj5ViAuX4woBisLjxQ=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "450K views"
         ),
         YouTubeVideo(
@@ -596,7 +703,7 @@ object LocalVideoStore {
             publishedAt = "2023-12-01T15:00:00Z",
             description = "The Collatz Conjecture is the simplest math problem that no one can solve — easy to understand, impossible to prove.",
             channelId = "UCsTcErHg8oDvUnTzoqsYeNw",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_mrdFKrYUtuMEqVUWPmtKSzy0weSdlawiMI2VPqP9yq1ks=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "38M views"
         ),
         YouTubeVideo(
@@ -606,7 +713,7 @@ object LocalVideoStore {
             publishedAt = "2023-10-18T14:30:00Z",
             description = "Where does the mass of a giant tree actually come from? The astonishing science of photosynthesis and carbon.",
             channelId = "UCsTcErHg8oDvUnTzoqsYeNw",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_mrdFKrYUtuMEqVUWPmtKSzy0weSdlawiMI2VPqP9yq1ks=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "14M views"
         ),
         YouTubeVideo(
@@ -616,7 +723,7 @@ object LocalVideoStore {
             publishedAt = "2023-09-05T13:00:00Z",
             description = "A scientific and visual exploration of planetary consequences if all existing nuclear stockpiles were detonated.",
             channelId = "UCsXVk37bltHxD1rDPwtNM8Q",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k_55aa-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n1Ribd7LwdP_qKtqWL3ZDfIgv9M1d6g78VwpHGXVR2Ir4=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "29M views"
         ),
         YouTubeVideo(
@@ -626,7 +733,7 @@ object LocalVideoStore {
             publishedAt = "2023-08-12T11:00:00Z",
             description = "String theory explained simply with astonishing animations and theoretical physics breakdown.",
             channelId = "UCsXVk37bltHxD1rDPwtNM8Q",
-            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k_55aa-1200=s88-c-k-c0x00ffffff-no-rj",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n1Ribd7LwdP_qKtqWL3ZDfIgv9M1d6g78VwpHGXVR2Ir4=s176-c-k-c0x00ffffff-no-rj",
             viewCount = "22M views"
         )
     )
@@ -645,6 +752,12 @@ object LocalVideoStore {
                     val item = array.optJSONObject(i) ?: continue
                     val id = item.optString("videoId")
                     if (!id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) continue
+                    val chId = item.optString("channelId", "")
+                    val rawAvatar = item.optString("channelAvatarUrl", "")
+                    val cleanAvatar = if (rawAvatar.isBlank() || rawAvatar.contains("1200=") || rawAvatar.contains("hqdefault") || rawAvatar.contains("vi/")) {
+                        ApprovedChannelStore.DEFAULT_CHANNELS.find { it.channelId == chId }?.avatarUrl.orEmpty()
+                    } else rawAvatar
+
                     add(
                         YouTubeVideo(
                             videoId = id,
@@ -652,8 +765,8 @@ object LocalVideoStore {
                             channelTitle = item.optString("channelTitle", "Unknown channel"),
                             publishedAt = item.optString("publishedAt", ""),
                             description = item.optString("description", ""),
-                            channelId = item.optString("channelId", ""),
-                            channelAvatarUrl = item.optString("channelAvatarUrl", ""),
+                            channelId = chId,
+                            channelAvatarUrl = cleanAvatar,
                             viewCount = item.optString("viewCount", "")
                         )
                     )

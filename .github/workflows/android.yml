@@ -52,11 +52,11 @@ jobs:
 
       - name: Run unit tests and assemble debug APK
         run: |
-          if [ -f gradlew ]; then
+          if command -v gradle >/dev/null 2>&1; then
+            gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
+          elif [ -f gradlew ]; then
             chmod +x gradlew
             ./gradlew :app:testDebugUnitTest :app:assembleDebug --stacktrace
-          else
-            gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
           fi
 
       - name: Upload debug APK

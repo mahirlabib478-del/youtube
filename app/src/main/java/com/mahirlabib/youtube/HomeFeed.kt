@@ -295,31 +295,12 @@ private fun VideoCardItem(
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Channel Avatar
-            if (video.channelAvatarUrl.isNotBlank()) {
-                AsyncImage(
-                    model = video.channelAvatarUrl,
-                    contentDescription = video.channelTitle,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Surface(
-                    modifier = Modifier.size(36.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = video.channelTitle.take(1).uppercase(),
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            // Channel Avatar with colorful fallback
+            ChannelAvatar(
+                channelTitle = video.channelTitle,
+                avatarUrl = video.channelAvatarUrl,
+                size = 36.dp
+            )
 
             // Title and Channel metadata
             Column(modifier = Modifier.weight(1f)) {

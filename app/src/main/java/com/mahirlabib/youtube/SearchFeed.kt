@@ -117,18 +117,32 @@ fun SearchFeed(
     }
 
     // Live search when query changes
+    // Live search when query changes - instant local match + debounced online YouTube search
     LaunchedEffect(query, cachedVideos) {
-        if (query.isBlank()) {
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) {
             searchResults = cachedVideos
-        } else {
-            // Instant local filter immediately
-            val localFiltered = cachedVideos.filter {
-                it.title.contains(query, ignoreCase = true) ||
-                    it.channelTitle.contains(query, ignoreCase = true) ||
-                    it.description.contains(query, ignoreCase = true)
-            }
-            searchResults = localFiltered
+            return@LaunchedEffect
         }
+        // 1. Instant local filter
+        val localFiltered = cachedVideos.filter {
+            it.title.contains(trimmed, ignoreCase = true) ||
+                it.channelTitle.contains(trimmed, ignoreCase = true) ||
+                it.description.contains(trimmed, ignoreCase = true)
+        }
+        searchResults = localFiltered
+
+        // 2. Debounced online YouTube search
+        kotlinx.coroutines.delay(650)
+        isSearching = true
+        runCatching {
+            YouTubeDataRepository.searchChannelVideos(context, BuildConfig.YOUTUBE_API_KEY, trimmed)
+        }.onSuccess { list ->
+            if (list.isNotEmpty()) {
+                searchResults = list
+            }
+        }
+        isSearching = false
     }
 
     // Find any channel matching current search query
@@ -152,13 +166,11 @@ fun SearchFeed(
         ) {
             OutlinedTextField(
                 value = query,
-                onValueChange = {
-                    onQueryChange(it)
-                },
+                onValueChange = onQueryChange,
                 modifier = Modifier
                     .weight(1f)
                     .testTag("search_text_input"),
-                placeholder = { Text("Search videos or channels…") },
+                placeholder = { Text("Search any video or channel on YouTube…") },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -184,12 +196,31 @@ fun SearchFeed(
                 shape = RoundedCornerShape(24.dp)
             )
 
-            if (isSearching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    color = Color(0xFFFF0033),
-                    strokeWidth = 2.dp
-                )
+            // Dedicated Search Button
+            IconButton(
+                onClick = {
+                    focusManager.clearFocus()
+                    performSearch(query)
+                },
+                modifier = Modifier
+                    .background(Color(0xFFFF0033), CircleShape)
+                    .size(46.dp)
+                    .testTag("search_submit_button")
+            ) {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
 
@@ -294,31 +325,11 @@ fun SearchFeed(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                if (matchingChannel.avatarUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = matchingChannel.avatarUrl,
-                                        contentDescription = matchingChannel.title,
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Surface(
-                                        modifier = Modifier.size(56.dp),
-                                        shape = CircleShape,
-                                        color = Color(0xFFFF0033)
-                                    ) {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.Default.Tv,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
-                                    }
-                                }
+                                ChannelAvatar(
+                                    channelTitle = matchingChannel.title,
+                                    avatarUrl = matchingChannel.avatarUrl,
+                                    size = 56.dp
+                                )
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -390,30 +401,11 @@ fun SearchFeed(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 verticalAlignment = Alignment.Top
                             ) {
-                                if (video.channelAvatarUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = video.channelAvatarUrl,
-                                        contentDescription = video.channelTitle,
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Surface(
-                                        modifier = Modifier.size(36.dp),
-                                        shape = CircleShape,
-                                        color = MaterialTheme.colorScheme.surfaceVariant
-                                    ) {
-                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = video.channelTitle.take(1).uppercase(),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp
-                                            )
-                                        }
-                                    }
-                                }
+                                ChannelAvatar(
+                                    channelTitle = video.channelTitle,
+                                    avatarUrl = video.channelAvatarUrl,
+                                    size = 36.dp
+                                )
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(

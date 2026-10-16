@@ -52,10 +52,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
 val SHORTS_PREVIEW_LIST = listOf(
-    YouTubeVideo("M7lc1UVf-VE", "Official YouTube Player API - Embed Showcase", "YouTube Developers", "2024-01-01T00:00:00Z", "YouTube iframe test", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj"),
-    YouTubeVideo("aqz-KE-bpKQ", "Big Buck Bunny - Animated Short Excerpt", "Blender Foundation", "2023-01-01T00:00:00Z", "Animation excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj"),
-    YouTubeVideo("eRsGyueVLvQ", "Sintel - 4K Epic Film Sequence", "Blender Foundation", "2023-05-01T00:00:00Z", "Open movie excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj"),
-    YouTubeVideo("R6MlUcmgul8", "Tears of Steel - Sci-Fi Action Scene", "Blender Foundation", "2023-03-01T00:00:00Z", "Sci-fi VFX showcase", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj")
+    YouTubeVideo("M7lc1UVf-VE", "Official YouTube Player API - Embed Showcase", "Google for Developers", "2024-01-01T00:00:00Z", "YouTube iframe test", channelAvatarUrl = "https://yt3.googleusercontent.com/r99eRlOesQkJe7pOzDY4JazAlhidoVp-0syxBnYjfeHdmUXGa5zOxcozaxKF2oPHg3RkglecZQ=s176-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("aqz-KE-bpKQ", "Big Buck Bunny - Animated Short Excerpt", "Blender Foundation", "2023-01-01T00:00:00Z", "Animation excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("eRsGyueVLvQ", "Sintel - 4K Epic Film Sequence", "Blender Foundation", "2023-05-01T00:00:00Z", "Open movie excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("R6MlUcmgul8", "Tears of Steel - Sci-Fi Action Scene", "Blender Foundation", "2023-03-01T00:00:00Z", "Sci-fi VFX showcase", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_nqhez5E1j4YzrCvzTAAB6z_KDFFZznqWv0x-vfY2gsXdY=s176-c-k-c0x00ffffff-no-rj")
 )
 
 @Composable
@@ -191,15 +191,11 @@ fun ShortsFeed(
                 .padding(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(28.dp),
-                    shape = CircleShape,
-                    color = Color(0xFFFF0033)
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(currentVideo.channelTitle.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
+                ChannelAvatar(
+                    channelTitle = currentVideo.channelTitle,
+                    avatarUrl = currentVideo.channelAvatarUrl,
+                    size = 28.dp
+                )
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = "@${currentVideo.channelTitle.replace(" ", "")}",

@@ -117,6 +117,20 @@ private fun YouTubeApp() {
     var customFullscreenView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
+    val activity = context as? ComponentActivity
+    LaunchedEffect(customFullscreenView) {
+        val window = activity?.window ?: return@LaunchedEffect
+        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        if (customFullscreenView != null) {
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
     fun playVideo(video: YouTubeVideo) {
         history = WatchHistoryStore.record(
             context,

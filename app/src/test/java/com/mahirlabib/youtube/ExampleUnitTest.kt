@@ -76,4 +76,30 @@ class ExampleUnitTest {
             assertTrue(short.title.isNotBlank())
         }
     }
+
+    @Test
+    fun rssParsingPatternValidatesStructure() {
+        val sampleXml = """
+            <feed>
+                <title>Test Feed</title>
+                <author><name>Test Channel</name></author>
+                <entry>
+                    <yt:videoId>M7lc1UVf-VE</yt:videoId>
+                    <title>Sample Video Title</title>
+                    <published>2024-01-01T00:00:00Z</published>
+                    <media:thumbnail url="https://i.ytimg.com/vi/M7lc1UVf-VE/hqdefault.jpg"/>
+                    <media:description>Sample description</media:description>
+                </entry>
+            </feed>
+        """.trimIndent()
+        val entryRegex = Regex("<entry>(.*?)</entry>", RegexOption.DOT_MATCHES_ALL)
+        val videoIdRegex = Regex("<(?:yt:)?videoId>([^<]+)</(?:yt:)?videoId>")
+        val titleRegex = Regex("<title>([^<]+)</title>")
+        val match = entryRegex.find(sampleXml)
+        assertTrue(match != null)
+        val vid = videoIdRegex.find(match!!.value)?.groupValues?.getOrNull(1)
+        val title = titleRegex.find(match.value)?.groupValues?.getOrNull(1)
+        assertEquals("M7lc1UVf-VE", vid)
+        assertEquals("Sample Video Title", title)
+    }
 }

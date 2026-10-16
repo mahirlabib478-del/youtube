@@ -285,26 +285,11 @@ fun ChannelManagerScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (channel.avatarUrl.isNotBlank()) {
-                        AsyncImage(
-                            model = channel.avatarUrl,
-                            contentDescription = channel.title,
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Surface(
-                            modifier = Modifier.size(44.dp),
-                            shape = CircleShape,
-                            color = Color(0xFFFF0033)
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                Text(channel.title.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+                    ChannelAvatar(
+                        channelTitle = channel.title,
+                        avatarUrl = channel.avatarUrl,
+                        size = 44.dp
+                    )
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(

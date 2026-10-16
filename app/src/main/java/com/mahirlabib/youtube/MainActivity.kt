@@ -219,7 +219,7 @@ private fun YouTubeApp() {
             runCatching {
                 val channels = ApprovedChannelStore.load(context)
                 if (channels.isEmpty()) {
-                    YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY) to emptyMap<String, String?>()
+                    Triple(YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY), emptyMap<String, String?>(), 0)
                 } else {
                     val pages = channels.mapNotNull { channel ->
                         runCatching {
@@ -227,9 +227,9 @@ private fun YouTubeApp() {
                         }.getOrNull()
                     }
                     val mixed = mixChannelVideos(pages.map { it.second.videos })
-                    mixed to (feedPageTokens + pages.associate { (channel, page) -> channel.channelId to page.continuationToken })
+                    Triple(mixed, feedPageTokens + pages.associate { (channel, page) -> channel.channelId to page.continuationToken }, channels.size - pages.size)
                 }
-            }.onSuccess { (videos, tokens) ->
+            }.onSuccess { (videos, tokens, failedChannels) ->
                 if (videos.isNotEmpty()) {
                     approvedVideos = videos
                     LocalVideoStore.save(context, videos)
@@ -237,7 +237,12 @@ private fun YouTubeApp() {
                 feedPageTokens = tokens
                 feedHasMore = tokens.values.any { !it.isNullOrBlank() }
                 feedRefreshVersion++
-                feedErrorMessage = if (videos.isEmpty()) "No public videos found for the saved channels." else null
+                feedErrorMessage = when {
+                    videos.isEmpty() && failedChannels > 0 -> "Couldn't refresh saved channels. Check your connection and scroll to retry."
+                    videos.isEmpty() -> "No public videos found for the saved channels."
+                    failedChannels > 0 -> "Some channels couldn't refresh. Showing available videos; scroll to retry."
+                    else -> null
+                }
             }.onFailure { err ->
                 // Keep cached feed visible if refresh fails.
                 feedErrorMessage = err.message ?: "Failed to refresh feed."
@@ -265,15 +270,15 @@ private fun YouTubeApp() {
                 val nextTokens = feedPageTokens.toMutableMap()
                 pageResults.forEach { (channel, page) -> nextTokens[channel.channelId] = page.continuationToken }
                 val newVideos = mixChannelVideos(pageResults.map { it.second.videos }, approvedVideos.lastOrNull()?.channelId.orEmpty())
-                Triple(newVideos, nextTokens, pageResults.isNotEmpty())
-            }.onSuccess { (newVideos, nextTokens, hadPages) ->
+                Triple(newVideos, nextTokens, pageResults.size < channels.count { !feedPageTokens[it.channelId].isNullOrBlank() })
+            }.onSuccess { (newVideos, nextTokens, hasFailedChannels) ->
                 val merged = (approvedVideos + newVideos).distinctBy { it.videoId }
                 approvedVideos = merged
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = nextTokens
                 feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
-                feedErrorMessage = if (!hadPages && feedHasMore) {
-                    "Couldn't load more videos. Scroll to retry."
+                feedErrorMessage = if (hasFailedChannels && feedHasMore) {
+                    "Some channels couldn't load more videos. Scroll to retry."
                 } else null
             }.onFailure { err ->
                 feedErrorMessage = err.message ?: "Failed to load more videos. Scroll to retry."

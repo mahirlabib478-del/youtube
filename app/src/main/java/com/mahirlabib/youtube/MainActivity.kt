@@ -221,8 +221,10 @@ private fun YouTubeApp() {
                 if (channels.isEmpty()) {
                     YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY) to emptyMap<String, String?>()
                 } else {
-                    val pages = channels.map { channel ->
-                        channel to YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
+                    val pages = channels.mapNotNull { channel ->
+                        runCatching {
+                            channel to YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
+                        }.getOrNull()
                     }
                     val mixed = mixChannelVideos(pages.map { it.second.videos })
                     mixed to pages.associate { (channel, page) -> channel.channelId to page.continuationToken }

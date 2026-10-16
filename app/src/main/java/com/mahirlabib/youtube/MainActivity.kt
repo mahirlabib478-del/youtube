@@ -228,7 +228,13 @@ private fun YouTubeApp() {
                         }.getOrNull()
                     }
                     val mixed = mixChannelVideos(pages.map { it.second.videos })
-                    Triple(mixed, feedPageTokens + pages.associate { (channel, page) -> channel.channelId to page.continuationToken }, channels.size - pages.size)
+                    val refreshedTokens = pages.associate { (channel, page) -> channel.channelId to page.continuationToken }
+                    // Keep retry tokens for channels that failed, but discard tokens for
+                    // channels that were removed from the approved-channel list.
+                    val activeTokens = channels.associate { channel ->
+                        channel.channelId to (refreshedTokens[channel.channelId] ?: feedPageTokens[channel.channelId])
+                    }
+                    Triple(mixed, activeTokens, channels.size - pages.size)
                 }
             }.onSuccess { (videos, tokens, failedChannels) ->
                 if (videos.isNotEmpty()) {

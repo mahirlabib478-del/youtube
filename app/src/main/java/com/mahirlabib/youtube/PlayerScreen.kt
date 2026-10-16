@@ -3,6 +3,9 @@ package com.mahirlabib.youtube
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.app.PictureInPictureParams
+import android.os.Build
+import android.util.Rational
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -44,6 +47,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbDown
@@ -242,6 +246,36 @@ fun PlayerScreen(
                         Icon(
                             imageVector = Icons.Default.Fullscreen,
                             contentDescription = "Fullscreen"
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                                PipSettingsStore.isPipVideoEnabled(context) &&
+                                activity is Activity
+                            ) {
+                                runCatching {
+                                    activity.enterPictureInPictureMode(
+                                        PictureInPictureParams.Builder()
+                                            .setAspectRatio(Rational(16, 9))
+                                            .build()
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "Picture-in-picture could not be started. Check Android app permissions.", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    if (PipSettingsStore.isPipVideoEnabled(context)) "Picture-in-picture requires Android 8.0 or later." else "Select Floating Video in Background Playback settings first.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.testTag("player_pip_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureInPictureAlt,
+                            contentDescription = "Enter picture-in-picture"
                         )
                     }
                 }

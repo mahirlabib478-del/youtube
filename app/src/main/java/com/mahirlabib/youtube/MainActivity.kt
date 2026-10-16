@@ -320,21 +320,8 @@ private fun YouTubeApp(
     )
 
     MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
-        // True PiP Window Mode: Clean Edge-to-Edge Player
-        if (isPipActive && activeVideo != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-            ) {
-                YouTubeEmbedPlayer(
-                    videoId = activeVideo!!.videoId,
-                    modifier = Modifier.fillMaxSize(),
-                    autoplay = true
-                )
-            }
-            return@MaterialTheme
-        }
+        // Keep the existing PlayerScreen/WebView composed during Android PiP.
+        // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.
 
         // True Fullscreen Video Overlay when triggered by WebChromeClient
         if (customFullscreenView != null) {

@@ -525,7 +525,25 @@ private fun YouTubeApp() {
                         onPlayVideo = { video ->
                             playVideo(video)
                         },
-                        onBack = { selectedChannel = null }
+                        onBack = { selectedChannel = null },
+                        onSubscriptionChanged = { channel, subscribed ->
+                            if (channel.channelId.isNotBlank()) {
+                                if (subscribed) {
+                                    ApprovedChannelStore.add(context, channel.channelId, channel.title, channel.avatarUrl)
+                                } else {
+                                    ApprovedChannelStore.remove(context, channel.channelId)
+                                    val remainingVideos = approvedVideos.filterNot {
+                                        it.channelId == channel.channelId ||
+                                            it.channelTitle.equals(channel.title, ignoreCase = true)
+                                    }
+                                    approvedVideos = remainingVideos
+                                    LocalVideoStore.save(context, remainingVideos)
+                                    feedPageTokens = feedPageTokens - channel.channelId
+                                    feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() }
+                                }
+                                refreshFeed()
+                            }
+                        }
                     )
                 }
 

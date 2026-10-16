@@ -131,6 +131,7 @@ private fun YouTubeApp() {
     var feedPageTokens by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
     var feedHasMore by remember { mutableStateOf(false) }
     var feedRefreshVersion by remember { mutableIntStateOf(0) }
+    var channelListRefreshKey by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
 
     // Fullscreen video state
@@ -535,6 +536,7 @@ private fun YouTubeApp() {
                                     feedPageTokens = feedPageTokens - channel.channelId
                                     feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() }
                                 }
+                                channelListRefreshKey++
                                 refreshFeed()
                             }
                         }
@@ -562,6 +564,7 @@ private fun YouTubeApp() {
                                 1 -> ChannelManagerScreen(
                                     padding = padding, onPlay = { playVideo(it) },
                                     onVideosLoaded = { approvedVideos = it },
+                                    channelListRefreshKey = channelListRefreshKey,
                                     onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
                                 )
                                 2 -> LibraryScreen(

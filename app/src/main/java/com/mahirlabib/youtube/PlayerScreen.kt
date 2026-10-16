@@ -75,6 +75,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -105,7 +107,8 @@ fun PlayerScreen(
     onPlayRelated: (YouTubeVideo) -> Unit,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null,
-    onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
+    onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> },
+    miniMode: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -207,13 +210,19 @@ fun PlayerScreen(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .then(
-                if (isFullscreenExpanded) Modifier.background(Color.Black)
-                else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
-            )
-            .testTag("player_screen")
+        modifier = if (miniMode) {
+            // Keep the same PlayerScreen/WebView composed while the visible mini-player
+            // uses a thumbnail. This avoids disposing and re-creating the active player.
+            Modifier.size(1.dp).alpha(0f).clipToBounds().testTag("player_screen_mini_host")
+        } else {
+            Modifier
+                .fillMaxSize()
+                .then(
+                    if (isFullscreenExpanded) Modifier.background(Color.Black)
+                    else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
+                )
+                .testTag("player_screen")
+        }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (!isFullscreenExpanded) {

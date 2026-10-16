@@ -86,11 +86,14 @@ fun ChannelDetailScreen(
     channel: ChannelDetailState,
     allVideos: List<YouTubeVideo>,
     onPlayVideo: (YouTubeVideo) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onSubscriptionChanged: (channel: ChannelDetailState, subscribed: Boolean) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     val lazyListState = rememberLazyListState()
-    var isSubscribed by remember { mutableStateOf(false) }
+    var isSubscribed by remember(channel.channelId) {
+        mutableStateOf(ApprovedChannelStore.load(context).any { it.channelId == channel.channelId })
+    }
     var channelVideos by remember(channel.channelId) {
         val initial = allVideos.filter {
             (channel.channelId.isNotBlank() && it.channelId == channel.channelId) ||
@@ -295,7 +298,11 @@ fun ChannelDetailScreen(
 
                     // YouTube Subscribe Button
                     Button(
-                        onClick = { isSubscribed = !isSubscribed },
+                        onClick = {
+                            val nextSubscribed = !isSubscribed
+                            isSubscribed = nextSubscribed
+                            onSubscriptionChanged(channel, nextSubscribed)
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(42.dp)

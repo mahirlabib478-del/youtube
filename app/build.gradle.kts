@@ -2,15 +2,21 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.android.libraries.mapsplatform.secrets-gradle-plugin")
 }
-
-val youtubeApiKey = providers.gradleProperty("YOUTUBE_API_KEY")
-    .orElse(providers.environmentVariable("YOUTUBE_API_KEY"))
-    .getOrElse("")
 
 android {
     namespace = "com.mahirlabib.youtube"
     compileSdk = 35
+
+    signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
     defaultConfig {
         applicationId = "com.mahirlabib.youtube"
@@ -19,7 +25,12 @@ android {
         versionCode = 2
         versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "YOUTUBE_API_KEY", "\"$youtubeApiKey\"")
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
+        }
     }
 
     buildFeatures {
@@ -32,6 +43,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+}
+
+secrets {
+    propertiesFileName = ".env"
+    defaultPropertiesFileName = ".env.example"
 }
 
 dependencies {

@@ -9,14 +9,6 @@ android {
     namespace = "com.mahirlabib.youtube"
     compileSdk = 35
 
-    signingConfigs {
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
 
     defaultConfig {
         applicationId = "com.mahirlabib.youtube"
@@ -27,11 +19,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
-        }
-    }
 
     buildFeatures {
         compose = true

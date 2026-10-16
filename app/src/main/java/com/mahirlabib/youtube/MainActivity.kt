@@ -276,11 +276,10 @@ private fun YouTubeApp() {
         }
     }
 
-    // Auto-load latest videos from channels on startup
+    // Refresh channel pages on every app start so cached feeds also restore
+    // pagination tokens; otherwise a cached list could never load beyond its first batch.
     LaunchedEffect(Unit) {
-        if (approvedVideos.size <= 4) {
-            refreshFeed()
-        }
+        refreshFeed()
     }
 
     // Device Back Navigation handler

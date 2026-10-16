@@ -91,7 +91,11 @@ fun HomeFeed(
             total > 0 && lastVisible >= total - 4
         }
     }
-    LaunchedEffect(nearFeedEnd, isLoading, isLoadingMore, videos.size) {
+    // Do not key this effect on isLoadingMore: after a failed page request that
+    // flag returns to false while the list is still at the end, which can create
+    // an automatic retry loop. Re-entering the end or a successful list-size
+    // change can trigger the next page instead.
+    LaunchedEffect(nearFeedEnd, isLoading, videos.size) {
         if (nearFeedEnd && !isLoading && !isLoadingMore && videos.isNotEmpty()) onLoadMore()
     }
     val categories = listOf("All", "Programming", "Science", "Tech", "Blender", "Podcasts", "Design", "Physics", "Tutorials")

@@ -52,10 +52,10 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
 val SHORTS_PREVIEW_LIST = listOf(
-    YouTubeVideo("M7lc1UVf-VE", "Official YouTube Player API", "YouTube Devs", "2024-01-01T00:00:00Z", "YouTube iframe test", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj"),
-    YouTubeVideo("kJQP7kiw5Fk", "Despacito - Live Performance Clip", "Luis Fonsi", "2023-01-01T00:00:00Z", "Music video performance clip", channelAvatarUrl = ""),
-    YouTubeVideo("fJ9rUzIMcZQ", "Queen - Bohemian Rhapsody Live", "Queen Official", "2023-05-01T00:00:00Z", "Live aid concert excerpt", channelAvatarUrl = ""),
-    YouTubeVideo("JGwWNGJdvx8", "Ed Sheeran - Shape of You", "Ed Sheeran", "2023-03-01T00:00:00Z", "Official music clip", channelAvatarUrl = "")
+    YouTubeVideo("M7lc1UVf-VE", "Official YouTube Player API - Embed Showcase", "YouTube Developers", "2024-01-01T00:00:00Z", "YouTube iframe test", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("aqz-KE-bpKQ", "Big Buck Bunny - Animated Short Excerpt", "Blender Foundation", "2023-01-01T00:00:00Z", "Animation excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("eRsGyueVLvQ", "Sintel - 4K Epic Film Sequence", "Blender Foundation", "2023-05-01T00:00:00Z", "Open movie excerpt", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj"),
+    YouTubeVideo("R6MlUcmgul8", "Tears of Steel - Sci-Fi Action Scene", "Blender Foundation", "2023-03-01T00:00:00Z", "Sci-fi VFX showcase", channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj")
 )
 
 @Composable

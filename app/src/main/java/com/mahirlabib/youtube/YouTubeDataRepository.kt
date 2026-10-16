@@ -383,12 +383,99 @@ object LocalVideoStore {
     private const val PREFS = "youtube_local_library"
     private const val KEY = "approved_channel_video_cache"
 
+    val DEFAULT_EMBED_VIDEOS = listOf(
+        YouTubeVideo(
+            videoId = "M7lc1UVf-VE",
+            title = "YouTube IFrame Player API - Live Embed Demo",
+            channelTitle = "YouTube Developers",
+            publishedAt = "2024-01-15T12:00:00Z",
+            description = "Demonstration of the official YouTube HTML5 embedded player with clean controls and autoplay.",
+            channelId = "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "1.8M views"
+        ),
+        YouTubeVideo(
+            videoId = "aqz-KE-bpKQ",
+            title = "Big Buck Bunny - 4K 60fps Open Movie",
+            channelTitle = "Blender Foundation",
+            publishedAt = "2023-11-20T10:00:00Z",
+            description = "Classic open-source computer animated comedy film by Blender Foundation. 100% embeddable across all platforms.",
+            channelId = "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "12M views"
+        ),
+        YouTubeVideo(
+            videoId = "eRsGyueVLvQ",
+            title = "Sintel - 4K Open Movie Project",
+            channelTitle = "Blender Foundation",
+            publishedAt = "2023-08-14T08:00:00Z",
+            description = "Sintel is an independently produced short film initiated by the Blender Foundation. 100% embeddable.",
+            channelId = "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "9.5M views"
+        ),
+        YouTubeVideo(
+            videoId = "R6MlUcmgul8",
+            title = "Tears of Steel - Sci-Fi VFX Open Movie",
+            channelTitle = "Blender VFX",
+            publishedAt = "2023-05-10T16:00:00Z",
+            description = "Exploring an open-source visual effects pipeline in a futuristic Amsterdam.",
+            channelId = "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "4.2M views"
+        ),
+        YouTubeVideo(
+            videoId = "y8OnoxKotPQ",
+            title = "What's new in Jetpack Compose",
+            channelTitle = "Android Developers",
+            publishedAt = "2024-05-20T17:00:00Z",
+            description = "Explore the newest features, performance improvements, and APIs in modern Jetpack Compose.",
+            channelId = "UCVHFbqXqoYvEWM1Ddxl0QDg",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_n3d25w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "450K views"
+        ),
+        YouTubeVideo(
+            videoId = "tEcmTzfvK98",
+            title = "The Simplest Math Problem No One Can Solve",
+            channelTitle = "Veritasium",
+            publishedAt = "2023-12-01T15:00:00Z",
+            description = "The Collatz Conjecture is the simplest math problem that no one can solve — easy to understand, impossible to prove.",
+            channelId = "UCsTcErHg8oDvUnTzoqsYeNw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "38M views"
+        ),
+        YouTubeVideo(
+            videoId = "2NnssvB3T4Q",
+            title = "Why Trees Are 99% Air",
+            channelTitle = "Veritasium",
+            publishedAt = "2023-10-18T14:30:00Z",
+            description = "Where does the mass of a giant tree actually come from? The astonishing science of photosynthesis and carbon.",
+            channelId = "UCsTcErHg8oDvUnTzoqsYeNw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "14M views"
+        ),
+        YouTubeVideo(
+            videoId = "bNpx7gpSqbY",
+            title = "What If We Detonated All Nuclear Bombs at Once?",
+            channelTitle = "Kurzgesagt – In a Nutshell",
+            publishedAt = "2023-09-05T13:00:00Z",
+            description = "A scientific and visual exploration of planetary consequences if all existing nuclear stockpiles were detonated.",
+            channelId = "UCsTcErHg8oDvUnTzoqsYeNw",
+            channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_m9955w-1200=s88-c-k-c0x00ffffff-no-rj",
+            viewCount = "29M views"
+        )
+    )
+
     fun load(context: Context): List<YouTubeVideo> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY, "[]") ?: "[]"
+            .getString(KEY, null)
+        if (raw.isNullOrBlank() || raw == "[]") {
+            save(context, DEFAULT_EMBED_VIDEOS)
+            return DEFAULT_EMBED_VIDEOS
+        }
         return runCatching {
             val array = JSONArray(raw)
-            buildList {
+            val list = buildList {
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i) ?: continue
                     val id = item.optString("videoId")
@@ -407,7 +494,14 @@ object LocalVideoStore {
                     )
                 }
             }
-        }.getOrDefault(emptyList())
+            if (list.isEmpty()) {
+                save(context, DEFAULT_EMBED_VIDEOS)
+                DEFAULT_EMBED_VIDEOS
+            } else list
+        }.getOrElse {
+            save(context, DEFAULT_EMBED_VIDEOS)
+            DEFAULT_EMBED_VIDEOS
+        }
     }
 
     fun save(context: Context, videos: List<YouTubeVideo>) {

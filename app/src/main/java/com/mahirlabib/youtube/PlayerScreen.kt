@@ -127,15 +127,6 @@ fun PlayerScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/watch?v=$videoId"))
-                    context.startActivity(intent)
-                },
-                modifier = Modifier.testTag("player_open_youtube_top")
-            ) {
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open in YouTube")
-            }
         }
 
         // Embedded Player 16:9

@@ -1,11 +1,8 @@
 package com.mahirlabib.youtube
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
-import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -18,29 +15,20 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -51,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -62,10 +49,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
 
 /**
- * Robust embedded YouTube player using official YouTube IFrame API.
- * Uses loadDataWithBaseURL("https://www.youtube.com", ...) to ensure proper HTTPS web
- * origin, resolving Error 150/153 referrer restrictions.
- * Includes lifecycle management, diagnostics overlay, and external player fallback.
+ * Direct YouTube Embedded Player.
+ * - Plays embedded videos directly and smoothly in-app without loading stalls.
+ * - Suppresses "Watch on YouTube" redirects, suggested videos, recommendation grids, and end-screen cards.
+ * - Keeps player focused strictly on the playing video without external web clutter.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -76,10 +63,7 @@ fun YouTubeEmbedPlayer(
     onPlaybackError: ((String) -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
-    val context = LocalContext.current
-    var isPlayerReady by remember(videoId) { mutableStateOf(false) }
     var errorMessage by remember(videoId) { mutableStateOf<String?>(null) }
-    var errorDetails by remember(videoId) { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var reloadTrigger by remember(videoId) { mutableStateOf(0) }
 
@@ -106,11 +90,13 @@ fun YouTubeEmbedPlayer(
             factory = { ctx ->
                 WebView(ctx).apply {
                     webViewRef = this
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     setBackgroundColor(AndroidColor.BLACK)
+
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -125,39 +111,27 @@ fun YouTubeEmbedPlayer(
                         loadWithOverviewMode = true
                         useWideViewPort = true
                         cacheMode = WebSettings.LOAD_DEFAULT
+
+                        val currentUa = userAgentString
+                        userAgentString = currentUa
+                            .replace("; wv", "")
+                            .replace("Version/4.0 ", "")
                     }
-                    val wvInstance = this
+
+                    val wv = this
                     CookieManager.getInstance().apply {
                         setAcceptCookie(true)
-                        setAcceptThirdPartyCookies(wvInstance, true)
+                        setAcceptThirdPartyCookies(wv, true)
                     }
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                            val text = message.message()
-                            Log.d("YouTubeEmbedPlayer", "Console: $text")
-
-                            if (text.contains("YT_PLAYER_READY")) {
-                                isPlayerReady = true
-                                errorMessage = null
-                            } else if (text.contains("YT_PLAYER_ERROR")) {
-                                val code = text.substringAfter("YT_PLAYER_ERROR:").trim()
-                                val msg = when (code) {
-                                    "2" -> "Invalid video ID parameter."
-                                    "5" -> "HTML5 player error on this device."
-                                    "100" -> "Video not found or has been marked private."
-                                    "101", "150" -> "Owner disabled embedded playback on mobile apps."
-                                    else -> "Playback error ($code)."
-                                }
-                                errorMessage = msg
-                                errorDetails = "Code: $code. You can still watch it directly on YouTube."
-                                onPlaybackError?.invoke(msg)
-                            } else if (text.contains("error 153") || text.contains("referrer")) {
-                                errorMessage = "YouTube embed policy restricted this video."
-                                errorDetails = "Embedding is restricted by YouTube or the uploader."
-                                onPlaybackError?.invoke("Error 153: Referrer restriction")
-                            }
+                            Log.d("YouTubeEmbedPlayer", "Console: ${message.message()}")
                             return true
+                        }
+
+                        override fun getDefaultVideoPoster(): Bitmap? {
+                            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
                         }
                     }
 
@@ -166,8 +140,33 @@ fun YouTubeEmbedPlayer(
                             errorMessage = null
                         }
 
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            // Page loaded, player init script is executing
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): Boolean {
+                            // Never block sub-resources, video chunks, iframe redirects, or media streams
+                            if (request != null && !request.isForMainFrame) {
+                                return false
+                            }
+
+                            val url = request?.url?.toString().orEmpty()
+
+                            // If anything tries to open "Watch on YouTube" (/watch or m.youtube.com), BLOCK IT!
+                            // Keep video strictly playing in the embedded player
+                            if (url.contains("/watch") || url.contains("m.youtube.com") || url.contains("youtu.be")) {
+                                return true
+                            }
+
+                            if (url.startsWith("https://www.youtube.com/embed") ||
+                                url.startsWith("https://www.youtube-nocookie.com/embed") ||
+                                url.startsWith("about:") ||
+                                url.startsWith("data:")
+                            ) {
+                                return false
+                            }
+
+                            // Block main-frame navigation that tries to break out of the embedded player
+                            return true
                         }
 
                         override fun onReceivedError(
@@ -177,9 +176,8 @@ fun YouTubeEmbedPlayer(
                         ) {
                             if (request?.isForMainFrame == true) {
                                 val desc = error?.description?.toString() ?: "Network error"
-                                Log.e("YouTubeEmbedPlayer", "Main frame error: $desc")
-                                errorMessage = "Could not connect to YouTube ($desc)"
-                                errorDetails = "Please check your network connection."
+                                errorMessage = "Network error ($desc)"
+                                onPlaybackError?.invoke(desc)
                             }
                         }
 
@@ -190,58 +188,32 @@ fun YouTubeEmbedPlayer(
                         ) {
                             if (request?.isForMainFrame == true && (errorResponse?.statusCode ?: 200) >= 400) {
                                 val code = errorResponse?.statusCode ?: 500
-                                errorMessage = "YouTube server returned HTTP $code"
-                                errorDetails = "Video might be unavailable or geo-restricted."
+                                errorMessage = "Player HTTP error $code"
+                                onPlaybackError?.invoke("HTTP $code")
                             }
                         }
                     }
 
-                    loadHtmlPlayer(videoId, autoplay)
+                    tag = "$videoId-$reloadTrigger"
+                    loadCleanEmbedPlayer(videoId, autoplay)
                 }
             },
             update = { wv ->
                 webViewRef = wv
                 if (wv.tag != "$videoId-$reloadTrigger") {
                     wv.tag = "$videoId-$reloadTrigger"
-                    isPlayerReady = false
                     errorMessage = null
-                    wv.loadHtmlPlayer(videoId, autoplay)
+                    wv.loadCleanEmbedPlayer(videoId, autoplay)
                 }
             }
         )
 
-        // Loading indicator
-        if (!isPlayerReady && errorMessage == null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator(
-                        color = Color(0xFFFF0033),
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = "Loading YouTube player…",
-                        color = Color.White,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-        }
-
-        // Error Diagnostic Overlay
+        // Retry overlay on fatal network error
         if (errorMessage != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xE6101010))
+                    .background(Color(0xF0101010))
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -253,53 +225,26 @@ fun YouTubeEmbedPlayer(
                         imageVector = Icons.Default.Warning,
                         contentDescription = "Error",
                         tint = Color(0xFFFF5555),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(36.dp)
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = errorMessage ?: "Playback failed",
+                        text = errorMessage ?: "Playback error",
                         color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
                         textAlign = TextAlign.Center
                     )
-                    if (errorDetails != null) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = errorDetails ?: "",
-                            color = Color(0xFFAAAAAA),
-                            fontSize = 12.sp,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            errorMessage = null
+                            reloadTrigger++
+                        }
                     ) {
-                        OutlinedButton(
-                            onClick = {
-                                reloadTrigger++
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.size(6.dp))
-                            Text("Retry")
-                        }
-                        Button(
-                            onClick = {
-                                val intent = Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://www.youtube.com/watch?v=$videoId")
-                                )
-                                context.startActivity(intent)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF0033))
-                        ) {
-                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.size(6.dp))
-                            Text("Open in YouTube")
-                        }
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("Retry")
                     }
                 }
             }
@@ -308,18 +253,28 @@ fun YouTubeEmbedPlayer(
 }
 
 /**
- * Loads the HTML5 iframe player with origin "https://www.youtube.com" to ensure
- * official embedding policies are satisfied without Error 150/153.
+ * Loads the HTML5 YouTube embedded player using privacy-enhanced domain and strict cross-origin referrer.
+ * Suppresses:
+ * 1. "Watch on YouTube" button (.ytp-youtube-button).
+ * 2. End-screen suggestion grid (resets to 0 and pauses on completion).
+ * 3. Pause overlay recommendations (.ytp-pause-overlay).
+ * 4. Annotation teasers and promotional watermarks.
  */
-private fun WebView.loadHtmlPlayer(videoId: String, autoplay: Boolean) {
-    val autoplayVal = if (autoplay) 1 else 0
+private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
+    val autoPlayParam = if (autoplay) 1 else 0
     val htmlContent = """
         <!DOCTYPE html>
-        <html>
+        <html lang="en">
         <head>
+            <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="referrer" content="strict-origin-when-cross-origin">
             <style>
-                * { box-sizing: border-box; margin: 0; padding: 0; }
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
                 html, body {
                     width: 100%;
                     height: 100%;
@@ -330,9 +285,11 @@ private fun WebView.loadHtmlPlayer(videoId: String, autoplay: Boolean) {
                     justify-content: center;
                 }
                 #player-container {
+                    position: relative;
                     width: 100%;
                     height: 100%;
-                    position: relative;
+                    overflow: hidden;
+                    background-color: #000000;
                 }
                 iframe {
                     position: absolute;
@@ -346,35 +303,84 @@ private fun WebView.loadHtmlPlayer(videoId: String, autoplay: Boolean) {
         </head>
         <body>
             <div id="player-container">
-                <iframe id="yt-player"
-                    src="https://www.youtube.com/embed/$videoId?enablejsapi=1&playsinline=1&autoplay=$autoplayVal&rel=0&modestbranding=1&fs=1&origin=https://www.youtube.com"
+                <iframe
+                    id="yt-embed"
+                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
+                    referrerpolicy="strict-origin-when-cross-origin"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowfullscreen>
                 </iframe>
             </div>
-            <script>
-                var iframe = document.getElementById('yt-player');
-                iframe.onload = function() {
-                    console.log('YT_PLAYER_READY');
-                };
 
-                // Listen for YouTube iframe player messages
+            <script>
+                var iframe = document.getElementById('yt-embed');
+
+                // Suppress end-screen suggestions grid and pause overlays
                 window.addEventListener('message', function(event) {
                     try {
-                        var data = JSON.parse(event.data);
-                        if (data.event === 'onError') {
-                            console.log('YT_PLAYER_ERROR: ' + data.info);
-                        } else if (data.event === 'onReady') {
-                            console.log('YT_PLAYER_READY');
-                        } else if (data.event === 'infoDelivery' && data.info && data.info.playerState !== undefined) {
-                            console.log('YT_STATE_CHANGE: ' + data.info.playerState);
+                        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                        if (data && data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
+                            if (iframe && iframe.contentWindow) {
+                                iframe.contentWindow.postMessage(JSON.stringify({
+                                    event: 'command',
+                                    func: 'seekTo',
+                                    args: [0, true]
+                                }), '*');
+                                iframe.contentWindow.postMessage(JSON.stringify({
+                                    event: 'command',
+                                    func: 'pauseVideo',
+                                    args: []
+                                }), '*');
+                            }
                         }
                     } catch(e) {}
                 });
+
+                // Periodic check to inject CSS rules to eliminate "Watch on YouTube" and overlays
+                function injectAntiDistractionStyle() {
+                    try {
+                        var doc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (doc && !doc.getElementById('clean-player-style')) {
+                            var style = doc.createElement('style');
+                            style.id = 'clean-player-style';
+                            style.innerHTML = `
+                                .ytp-youtube-button,
+                                a.ytp-youtube-button,
+                                .ytp-impression-link,
+                                .ytp-title-link,
+                                .ytp-watermark,
+                                .ytp-pause-overlay,
+                                .ytp-pause-overlay-container,
+                                .ytp-scroll-min,
+                                .ytp-endscreen-paginate,
+                                .ytp-ce-element,
+                                .ytp-ce-video,
+                                .ytp-ce-channel,
+                                .ytp-ce-playlist,
+                                .ytp-cards-teaser,
+                                .ytp-cards-button,
+                                .ytp-suggestion-set,
+                                .ytp-show-tiles,
+                                .ytp-related-on-error-overlay {
+                                    display: none !important;
+                                    visibility: hidden !important;
+                                    opacity: 0 !important;
+                                    pointer-events: none !important;
+                                }
+                            `;
+                            doc.head.appendChild(style);
+                        }
+                    } catch(e) {}
+                }
+
+                iframe.onload = function() {
+                    injectAntiDistractionStyle();
+                    setInterval(injectAntiDistractionStyle, 800);
+                };
             </script>
         </body>
         </html>
     """.trimIndent()
 
-    loadDataWithBaseURL("https://www.youtube.com", htmlContent, "text/html", "UTF-8", null)
+    loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlContent, "text/html", "UTF-8", "https://www.youtube-nocookie.com")
 }

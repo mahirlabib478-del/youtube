@@ -71,40 +71,44 @@ fun HomeFeed(
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
     val categories = listOf("All", "Tech", "Science", "Tutorials", "Podcasts", "News")
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(padding)
-            .testTag("home_feed_list"),
-        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        // Category Filter Chips
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                categories.forEachIndexed { index, label ->
-                    val isSelected = selectedCategoryIndex == index
-                    Surface(
-                        onClick = { selectedCategoryIndex = index },
-                        color = if (isSelected) Color(0xFF0F0F0F) else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.testTag("category_chip_$index")
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                        )
-                    }
+        // Pinned Category Filter Chips
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            categories.forEachIndexed { index, label ->
+                val isSelected = selectedCategoryIndex == index
+                Surface(
+                    onClick = { selectedCategoryIndex = index },
+                    color = if (isSelected) Color(0xFF0F0F0F) else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("category_chip_$index")
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
                 }
             }
         }
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .testTag("home_feed_list"),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+        ) {
 
         // Error message banner if any
         if (errorMessage != null && videos.isNotEmpty()) {
@@ -227,6 +231,7 @@ fun HomeFeed(
         }
     }
 }
+}
 
 @Composable
 private fun VideoCardItem(
@@ -252,6 +257,22 @@ private fun VideoCardItem(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp),
+                shape = CircleShape,
+                color = Color(0x99000000)
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play video",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
         }
 
         // Details Row

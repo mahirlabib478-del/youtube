@@ -125,27 +125,44 @@ fun PlayerScreen(
         }
     }
 
+    // Remember the orientation the user was in before fullscreen so exiting returns
+    // to that exact orientation instead of re-reading the device sensor (which can
+    // cause a second rotation/jump while the fullscreen layout is collapsing).
+    val orientationBeforeFullscreen = remember(videoId, activity) {
+        activity?.resources?.configuration?.orientation
+            ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
+    }
+
     LaunchedEffect(isFullscreenExpanded) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
         if (isFullscreenExpanded) {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            insetsController.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
-            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             isFullscreenControlsVisible = true
         } else {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity.requestedOrientation = when (orientationBeforeFullscreen) {
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(activity, videoId) {
         onDispose {
             val window = activity?.window
             if (window != null) {
                 val insetsController = WindowCompat.getInsetsController(window, window.decorView)
                 insetsController.show(WindowInsetsCompat.Type.systemBars())
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity.requestedOrientation = when (orientationBeforeFullscreen) {
+                    android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
+                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
             }
         }
     }

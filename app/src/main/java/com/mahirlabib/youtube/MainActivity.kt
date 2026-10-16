@@ -231,7 +231,7 @@ private fun YouTubeApp() {
                 runCatching {
                 val channels = ApprovedChannelStore.load(context)
                 if (channels.isEmpty()) {
-                    Triple(YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY), emptyMap<String, String?>(), 0)
+                    Triple(emptyList<YouTubeVideo>(), emptyMap<String, String?>(), 0)
                 } else {
                     val pages = channels.mapNotNull { channel ->
                         runCatching {

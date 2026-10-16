@@ -18,7 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 
 /**
@@ -58,10 +59,12 @@ fun ChannelAvatar(
     }
 
     val context = LocalContext.current
-    val isValidAvatarUrl = avatarUrl.isNotBlank() &&
-        !avatarUrl.contains("hqdefault") &&
-        !avatarUrl.contains("vi/") &&
-        avatarUrl.startsWith("http")
+    val normalizedUrl = avatarUrl.trim()
+    val isValidAvatarUrl = normalizedUrl.isNotBlank() &&
+        !normalizedUrl.contains("hqdefault") &&
+        !normalizedUrl.contains("vi/") &&
+        !normalizedUrl.contains("1200=") &&
+        normalizedUrl.startsWith("http")
 
     Box(
         modifier = modifier
@@ -78,18 +81,51 @@ fun ChannelAvatar(
             fontSize = (size.value * 0.44f).sp
         )
 
-        // Remote image layered on top; if it loads, it gracefully overlays the letter badge
+        // Remote image layered on top; if it loads successfully, it smoothly overlays the letter badge
         if (isValidAvatarUrl) {
-            AsyncImage(
+            SubcomposeAsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(avatarUrl)
+                    .data(normalizedUrl)
                     .crossfade(true)
                     .build(),
                 contentDescription = cleanTitle,
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(CircleShape),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                loading = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(avatarBgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initial,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = (size.value * 0.44f).sp
+                        )
+                    }
+                },
+                error = {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(avatarBgColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = initial,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = (size.value * 0.44f).sp
+                        )
+                    }
+                },
+                success = {
+                    SubcomposeAsyncImageContent()
+                }
             )
         }
     }

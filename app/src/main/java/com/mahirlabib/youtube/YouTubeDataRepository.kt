@@ -39,6 +39,12 @@ data class YouTubeComment(
     val likeCount: Int = 0
 )
 
+data class YouTubeCommentsPage(
+    val comments: List<YouTubeComment>,
+    val nextPageToken: String? = null,
+    val totalCount: Int = 0
+)
+
 internal fun isValidYouTubeChannelId(value: String): Boolean =
     Regex("^UC[A-Za-z0-9_-]{22}$").matches(value.trim())
 
@@ -103,7 +109,7 @@ object ApprovedChannelStore {
         ApprovedChannel(
             "UCBcRF18aGmBrDflS45305iw",
             "The Verge",
-            "https://yt3.googleusercontent.com/ytc/AIdro_mrdFKrYUtuMEqVUWPmtKSzy0weSdlawiMI2VPqP9yq1ks=s176-c-k-c0x00ffffff-no-rj"
+            "https://yt3.googleusercontent.com/ZIj_dq7beCkAkhufNqCid_SjWW4mkv4tqIDtv7_AAKzWdhBWI-rpsRXYXB9X3mB0s0zNzNtYdQ=s176-c-k-c0x00ffffff-no-rj"
         )
     )
 
@@ -118,7 +124,10 @@ object ApprovedChannelStore {
                         val obj = array.optJSONObject(i) ?: continue
                         val id = obj.optString("channelId")
                         if (isValidYouTubeChannelId(id) && none { it.channelId == id }) {
-                            val defaultAvatar = DEFAULT_CHANNELS.find { it.channelId == id }?.avatarUrl.orEmpty()
+                            val channelTitle = obj.optString("title", id)
+                            val defaultAvatar = DEFAULT_CHANNELS.find {
+                                it.channelId == id || it.title.equals(channelTitle, ignoreCase = true)
+                            }?.avatarUrl.orEmpty()
                             val savedAvatar = obj.optString("avatarUrl", "")
                             val finalAvatar = if (savedAvatar.isBlank() || savedAvatar.contains("1200=") || savedAvatar.contains("hqdefault") || savedAvatar.contains("vi/")) {
                                 defaultAvatar
@@ -127,7 +136,7 @@ object ApprovedChannelStore {
                             add(
                                 ApprovedChannel(
                                     channelId = id,
-                                    title = obj.optString("title", id),
+                                    title = channelTitle,
                                     avatarUrl = finalAvatar,
                                     subscriberCount = obj.optString("subscriberCount", "")
                                 )
@@ -500,11 +509,21 @@ object YouTubeDataRepository {
                                 ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
 
                             // Extract REAL channel profile icon from channelThumbnailSupportedRenderers
-                            val avatar = v.optJSONObject("channelThumbnailSupportedRenderers")
+                            var avatar = v.optJSONObject("channelThumbnailSupportedRenderers")
                                 ?.optJSONObject("channelThumbnailWithLinkRenderer")
                                 ?.optJSONObject("thumbnail")
                                 ?.optJSONArray("thumbnails")
                                 ?.optJSONObject(0)?.optString("url").orEmpty()
+
+                            if (avatar.startsWith("//")) {
+                                avatar = "https:$avatar"
+                            }
+                            if (avatar.isBlank() && (channelId.isNotBlank() || channel.isNotBlank())) {
+                                avatar = ApprovedChannelStore.DEFAULT_CHANNELS.find {
+                                    (channelId.isNotBlank() && it.channelId == channelId) ||
+                                        (channel.isNotBlank() && it.title.equals(channel, ignoreCase = true))
+                                }?.avatarUrl.orEmpty()
+                            }
 
                             list += YouTubeVideo(
                                 videoId = vid,
@@ -591,30 +610,46 @@ object YouTubeDataRepository {
             )
         }
 
-    suspend fun publicComments(videoId: String, apiKey: String): List<YouTubeComment> =
+    suspend fun publicCommentsPage(
+        videoId: String,
+        apiKey: String,
+        pageToken: String? = null
+    ): YouTubeCommentsPage =
         withContext(Dispatchers.IO) {
-            if (!isApiKeyConfigured(apiKey)) return@withContext emptyList()
+            if (!isApiKeyConfigured(apiKey)) return@withContext YouTubeCommentsPage(emptyList())
             require(Regex("^[A-Za-z0-9_-]{11}$").matches(videoId)) { "Invalid YouTube video ID." }
+            val pageParam = if (!pageToken.isNullOrBlank()) "&pageToken=${encode(pageToken)}" else ""
             val url = "https://www.googleapis.com/youtube/v3/commentThreads" +
-                "?part=snippet&videoId=${encode(videoId)}&maxResults=25&order=relevance&textFormat=plainText&key=${encode(apiKey)}"
+                "?part=snippet&videoId=${encode(videoId)}&maxResults=50&order=relevance&textFormat=plainText&key=${encode(apiKey)}$pageParam"
             val response = getJson(url)
             val items = response.optJSONArray("items") ?: JSONArray()
-            buildList {
+            val nextToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+            val totalResults = response.optJSONObject("pageInfo")?.optInt("totalResults", items.length()) ?: items.length()
+
+            val commentsList = buildList {
                 for (i in 0 until items.length()) {
                     val thread = items.optJSONObject(i) ?: continue
                     val snippet = thread.optJSONObject("snippet")?.optJSONObject("topLevelComment")?.optJSONObject("snippet") ?: continue
+                    var authorAvatar = snippet.optString("authorProfileImageUrl", "")
+                    if (authorAvatar.startsWith("//")) {
+                        authorAvatar = "https:$authorAvatar"
+                    }
                     add(
                         YouTubeComment(
                             author = snippet.optString("authorDisplayName", "YouTube user"),
                             text = snippet.optString("textDisplay", ""),
                             publishedAt = snippet.optString("publishedAt", ""),
-                            authorAvatarUrl = snippet.optString("authorProfileImageUrl", ""),
+                            authorAvatarUrl = authorAvatar,
                             likeCount = snippet.optInt("likeCount", 0)
                         )
                     )
                 }
             }
+            YouTubeCommentsPage(comments = commentsList, nextPageToken = nextToken, totalCount = totalResults)
         }
+
+    suspend fun publicComments(videoId: String, apiKey: String): List<YouTubeComment> =
+        publicCommentsPage(videoId, apiKey).comments
 
     private fun getJson(url: String): JSONObject {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
@@ -753,19 +788,29 @@ object LocalVideoStore {
                     val id = item.optString("videoId")
                     if (!id.matches(Regex("^[A-Za-z0-9_-]{11}$"))) continue
                     val chId = item.optString("channelId", "")
+                    val chTitle = item.optString("channelTitle", "Unknown channel")
                     val rawAvatar = item.optString("channelAvatarUrl", "")
                     val cleanAvatar = if (rawAvatar.isBlank() || rawAvatar.contains("1200=") || rawAvatar.contains("hqdefault") || rawAvatar.contains("vi/")) {
-                        ApprovedChannelStore.DEFAULT_CHANNELS.find { it.channelId == chId }?.avatarUrl.orEmpty()
+                        ApprovedChannelStore.DEFAULT_CHANNELS.find {
+                            (chId.isNotBlank() && it.channelId == chId) ||
+                                (chTitle.isNotBlank() && it.title.equals(chTitle, ignoreCase = true))
+                        }?.avatarUrl.orEmpty()
                     } else rawAvatar
+
+                    val resolvedChId = if (chId.isNotBlank()) chId else {
+                        ApprovedChannelStore.DEFAULT_CHANNELS.find {
+                            chTitle.isNotBlank() && it.title.equals(chTitle, ignoreCase = true)
+                        }?.channelId.orEmpty()
+                    }
 
                     add(
                         YouTubeVideo(
                             videoId = id,
                             title = item.optString("title", "YouTube video"),
-                            channelTitle = item.optString("channelTitle", "Unknown channel"),
+                            channelTitle = chTitle,
                             publishedAt = item.optString("publishedAt", ""),
                             description = item.optString("description", ""),
-                            channelId = chId,
+                            channelId = resolvedChId,
                             channelAvatarUrl = cleanAvatar,
                             viewCount = item.optString("viewCount", "")
                         )

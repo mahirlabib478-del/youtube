@@ -67,16 +67,14 @@ fun YouTubeEmbedPlayer(
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
 
-    key(videoId) {
-        YouTubeEmbedPlayerInstance(
-            videoId = videoId,
-            modifier = modifier,
-            autoplay = autoplay,
-            onPlaybackError = onPlaybackError,
-            onShowCustomView = onShowCustomView,
-            onHideCustomView = onHideCustomView
-        )
-    }
+    YouTubeEmbedPlayerInstance(
+        videoId = videoId,
+        modifier = modifier,
+        autoplay = autoplay,
+        onPlaybackError = onPlaybackError,
+        onShowCustomView = onShowCustomView,
+        onHideCustomView = onHideCustomView
+    )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -97,9 +95,11 @@ private fun YouTubeEmbedPlayerInstance(
         onDispose {
             webViewRef?.let { wv ->
                 try {
+                    (wv.parent as? ViewGroup)?.removeView(wv)
                     wv.stopLoading()
                     wv.loadUrl("about:blank")
                     wv.onPause()
+                    wv.removeAllViews()
                     wv.destroy()
                 } catch (e: Exception) {
                     Log.w("YouTubeEmbedPlayer", "Error disposing WebView", e)

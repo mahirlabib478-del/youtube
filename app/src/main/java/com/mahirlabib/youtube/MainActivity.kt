@@ -1,10 +1,15 @@
 package com.mahirlabib.youtube
 
+import android.app.PictureInPictureParams
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -17,23 +22,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,9 +54,10 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -57,10 +70,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -88,30 +103,75 @@ object ThemeStore {
 }
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        var isPipActiveState = mutableStateOf(false)
+        var currentActiveVideoState = mutableStateOf<YouTubeVideo?>(null)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            YouTubeApp()
+            YouTubeApp(
+                isPipActive = isPipActiveState.value,
+                onActiveVideoChanged = { currentActiveVideoState.value = it }
+            )
         }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val video = currentActiveVideoState.value
+        if (video != null && PipSettingsStore.isPipEnabled(this)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val params = PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .build()
+                    enterPictureInPictureMode(params)
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Failed to enter Picture-in-Picture mode", e)
+                }
+            }
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isPipActiveState.value = isInPictureInPictureMode
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun YouTubeApp() {
+private fun YouTubeApp(
+    isPipActive: Boolean = false,
+    onActiveVideoChanged: (YouTubeVideo?) -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
+    var isPipEnabled by remember { mutableStateOf(PipSettingsStore.isPipEnabled(context)) }
+    var showPipSettingsDialog by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
+    var isMiniPlayer by remember { mutableStateOf(false) }
+
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
     var isFeedLoading by remember { mutableStateOf(false) }
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // Sync active video with Activity for PiP
+    LaunchedEffect(activeVideo) {
+        onActiveVideoChanged(activeVideo)
+    }
 
     // Fullscreen video state
     var customFullscreenView by remember { mutableStateOf<View?>(null) }
@@ -140,6 +200,7 @@ private fun YouTubeApp() {
             video.description
         )
         activeVideo = video
+        isMiniPlayer = false
     }
 
     fun refreshFeed() {
@@ -173,7 +234,15 @@ private fun YouTubeApp() {
                 customFullscreenView = null
                 customViewCallback = null
             }
-            activeVideo != null -> activeVideo = null
+            activeVideo != null && !isMiniPlayer -> {
+                // Smoothly collapse to In-App MiniPlayer just like actual YouTube!
+                isMiniPlayer = true
+            }
+            activeVideo != null && isMiniPlayer -> {
+                // Dismiss miniplayer
+                activeVideo = null
+                isMiniPlayer = false
+            }
             selectedTab != 0 -> selectedTab = 0
         }
     }
@@ -187,7 +256,8 @@ private fun YouTubeApp() {
         onSurface = Color(0xFF0F0F0F),
         surfaceVariant = Color(0xFFF2F2F2),
         onSurfaceVariant = Color(0xFF606060),
-        surfaceContainer = Color(0xFFF8F8F8)
+        surfaceContainer = Color(0xFFF8F8F8),
+        surfaceContainerHigh = Color(0xFFEEEEEE)
     )
 
     val youtubeDarkColors = darkColorScheme(
@@ -199,11 +269,28 @@ private fun YouTubeApp() {
         onSurface = Color(0xFFF1F1F1),
         surfaceVariant = Color(0xFF272727),
         onSurfaceVariant = Color(0xFFAAAAAA),
-        surfaceContainer = Color(0xFF212121)
+        surfaceContainer = Color(0xFF212121),
+        surfaceContainerHigh = Color(0xFF2A2A2A)
     )
 
     MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
-        // True Fullscreen Video Overlay when triggered by YouTube player
+        // True PiP Window Mode: Clean Edge-to-Edge Player
+        if (isPipActive && activeVideo != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                YouTubeEmbedPlayer(
+                    videoId = activeVideo!!.videoId,
+                    modifier = Modifier.fillMaxSize(),
+                    autoplay = true
+                )
+            }
+            return@MaterialTheme
+        }
+
+        // True Fullscreen Video Overlay when triggered by WebChromeClient
         if (customFullscreenView != null) {
             Box(
                 modifier = Modifier
@@ -241,10 +328,52 @@ private fun YouTubeApp() {
             return@MaterialTheme
         }
 
+        // PiP / Background Playback Settings Dialog
+        if (showPipSettingsDialog) {
+            AlertDialog(
+                onDismissRequest = { showPipSettingsDialog = false },
+                title = { Text("Background Playback (PiP)") },
+                text = {
+                    Column {
+                        Text(
+                            text = "Keep playing video in a small floating window (Picture-in-Picture) when you leave or minimize the app.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = if (isPipEnabled) "PiP Playback Enabled" else "PiP Playback Disabled",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Switch(
+                                checked = isPipEnabled,
+                                onCheckedChange = { enabled ->
+                                    isPipEnabled = enabled
+                                    PipSettingsStore.setPipEnabled(context, enabled)
+                                    val msg = if (enabled) "Background PiP Playback enabled" else "Background PiP Playback disabled"
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showPipSettingsDialog = false }) {
+                        Text("Done")
+                    }
+                }
+            )
+        }
+
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                if (activeVideo == null) {
+                if (activeVideo == null || isMiniPlayer) {
                     TopAppBar(
                         title = {
                             Row(
@@ -273,6 +402,18 @@ private fun YouTubeApp() {
                             }
                         },
                         actions = {
+                            // Background PiP Toggle Option Dialog
+                            IconButton(
+                                onClick = { showPipSettingsDialog = true },
+                                modifier = Modifier.testTag("pip_settings_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureInPictureAlt,
+                                    contentDescription = "Background Playback Settings",
+                                    tint = if (isPipEnabled) Color(0xFFFF0033) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
                             // Dark / Light Theme Toggle
                             IconButton(
                                 onClick = {
@@ -284,76 +425,75 @@ private fun YouTubeApp() {
                             ) {
                                 Icon(
                                     imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                    contentDescription = if (isDarkMode) "Switch to Light Mode" else "Switch to Dark Mode",
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(22.dp)
+                                    contentDescription = "Toggle theme"
                                 )
                             }
-                            IconButton(onClick = { /* Cast */ }) {
-                                Icon(Icons.Default.Cast, contentDescription = "Cast", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                            }
-                            IconButton(onClick = { /* Notifications */ }) {
-                                Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                            }
-                            IconButton(onClick = { selectedTab = 3 }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        }
                     )
                 }
             },
             bottomBar = {
-                if (activeVideo == null) {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.testTag("bottom_navigation_bar")
-                    ) {
-                        NavigationBarItem(
-                            selected = selectedTab == 0,
-                            onClick = { selectedTab = 0 },
-                            icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                            label = { Text("Home") },
-                            modifier = Modifier.testTag("nav_home_tab")
-                        )
-                        // Channels tab directly replaces Shorts tab
-                        NavigationBarItem(
-                            selected = selectedTab == 1,
-                            onClick = { selectedTab = 1 },
-                            icon = { Icon(Icons.Default.Subscriptions, contentDescription = "Channels") },
-                            label = { Text("Channels") },
-                            modifier = Modifier.testTag("nav_channels_tab")
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == 2,
-                            onClick = {
-                                selectedTab = 2
-                                history = WatchHistoryStore.load(context)
-                            },
-                            icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Library") },
-                            label = { Text("Library") },
-                            modifier = Modifier.testTag("nav_library_tab")
-                        )
-                        NavigationBarItem(
-                            selected = selectedTab == 3,
-                            onClick = { selectedTab = 3 },
-                            icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                            label = { Text("Search") },
-                            modifier = Modifier.testTag("nav_search_tab")
-                        )
+                if (activeVideo == null || isMiniPlayer) {
+                    Column {
+                        // In-App Miniplayer Bar (Sits directly above bottom navigation bar, exactly like actual YouTube)
+                        if (activeVideo != null && isMiniPlayer) {
+                            InAppMiniPlayer(
+                                video = activeVideo!!,
+                                onExpand = { isMiniPlayer = false },
+                                onClose = {
+                                    activeVideo = null
+                                    isMiniPlayer = false
+                                }
+                            )
+                        }
+
+                        NavigationBar(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        ) {
+                            NavigationBarItem(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                label = { Text("Home") },
+                                modifier = Modifier.testTag("nav_home_tab")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                icon = { Icon(Icons.Default.Subscriptions, contentDescription = "Channels") },
+                                label = { Text("Channels") },
+                                modifier = Modifier.testTag("nav_channels_tab")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 2,
+                                onClick = {
+                                    selectedTab = 2
+                                    history = WatchHistoryStore.load(context)
+                                },
+                                icon = { Icon(Icons.Default.VideoLibrary, contentDescription = "Library") },
+                                label = { Text("Library") },
+                                modifier = Modifier.testTag("nav_library_tab")
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 3,
+                                onClick = { selectedTab = 3 },
+                                icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                                label = { Text("Search") },
+                                modifier = Modifier.testTag("nav_search_tab")
+                            )
+                        }
                     }
                 }
             }
         ) { padding ->
             when {
-                activeVideo != null -> {
+                activeVideo != null && !isMiniPlayer -> {
                     PlayerScreen(
                         video = activeVideo!!,
                         padding = padding,
                         relatedVideos = approvedVideos,
-                        onClose = { activeVideo = null },
+                        onClose = { isMiniPlayer = true },
                         onPlayRelated = { playVideo(it) },
                         onShowCustomView = { view, callback ->
                             customFullscreenView = view
@@ -378,7 +518,6 @@ private fun YouTubeApp() {
                     )
                 }
 
-                // Channels tab directly accessible without secret PIN gate
                 selectedTab == 1 -> {
                     ChannelManagerScreen(
                         padding = padding,
@@ -418,6 +557,102 @@ private fun YouTubeApp() {
                         onPlay = { playVideo(it) }
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * YouTube-style In-App MiniPlayer.
+ * Floats immediately above the bottom navigation bar when user navigates back while playing video.
+ */
+@Composable
+private fun InAppMiniPlayer(
+    video: YouTubeVideo,
+    onExpand: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(64.dp)
+            .clickable { onExpand() }
+            .testTag("in_app_mini_player"),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Live 16:9 embedded player thumbnail preview
+            Box(
+                modifier = Modifier
+                    .width(96.dp)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black)
+            ) {
+                YouTubeEmbedPlayer(
+                    videoId = video.videoId,
+                    modifier = Modifier.fillMaxSize(),
+                    autoplay = true
+                )
+            }
+
+            Spacer(Modifier.width(10.dp))
+
+            // Video Title & Channel metadata
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = video.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = video.channelTitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Expand Button
+            IconButton(
+                onClick = onExpand,
+                modifier = Modifier
+                    .size(38.dp)
+                    .testTag("mini_player_expand_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.OpenInFull,
+                    contentDescription = "Expand video",
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // Close / Dismiss Button
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier
+                    .size(38.dp)
+                    .testTag("mini_player_close_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Close video",
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }

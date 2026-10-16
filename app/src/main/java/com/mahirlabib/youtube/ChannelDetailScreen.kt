@@ -102,7 +102,7 @@ fun ChannelDetailScreen(
         if (channel.channelId.isNotBlank()) {
             isLoadingOnlineUploads = true
             uploadsError = null
-            runCatching {
+            try {
                 val page = YouTubeDataRepository.fetchChannelVideosPage(
                     channelId = channel.channelId,
                     channelAvatarUrl = channel.avatarUrl
@@ -114,10 +114,13 @@ fun ChannelDetailScreen(
                 }
                 continuationToken = page.continuationToken
                 hasMoreVideos = page.continuationToken != null
-            }.onFailure { error ->
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 uploadsError = error.message ?: "Could not load channel uploads. Check your internet connection and YouTube API key."
+            } finally {
+                isLoadingOnlineUploads = false
             }
-            isLoadingOnlineUploads = false
         }
     }
 
@@ -133,7 +136,7 @@ fun ChannelDetailScreen(
     LaunchedEffect(shouldLoadMore, continuationToken, hasMoreVideos, allowLoadMore, loadMoreRetryKey) {
         if (shouldLoadMore && !isLoadingMore && hasMoreVideos && continuationToken != null && allowLoadMore) {
             isLoadingMore = true
-            runCatching {
+            try {
                 val nextPage = YouTubeDataRepository.fetchChannelVideosPage(
                     channelId = channel.channelId,
                     channelAvatarUrl = channel.avatarUrl,
@@ -146,11 +149,14 @@ fun ChannelDetailScreen(
                 if (nextPage.continuationToken == null) {
                     hasMoreVideos = false
                 }
-            }.onFailure { error ->
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
                 uploadsError = error.message ?: "Could not load more videos. Try again later."
                 allowLoadMore = false
+            } finally {
+                isLoadingMore = false
             }
-            isLoadingMore = false
         }
     }
 

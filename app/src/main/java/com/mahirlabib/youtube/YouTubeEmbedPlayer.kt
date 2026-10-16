@@ -60,7 +60,9 @@ fun YouTubeEmbedPlayer(
     videoId: String,
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
-    onPlaybackError: ((String) -> Unit)? = null
+    onPlaybackError: ((String) -> Unit)? = null,
+    onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
+    onHideCustomView: (() -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
     var errorMessage by remember(videoId) { mutableStateOf<String?>(null) }
@@ -132,6 +134,16 @@ fun YouTubeEmbedPlayer(
 
                         override fun getDefaultVideoPoster(): Bitmap? {
                             return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+                        }
+
+                        override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                            if (view != null && callback != null) {
+                                onShowCustomView?.invoke(view, callback)
+                            }
+                        }
+
+                        override fun onHideCustomView() {
+                            onHideCustomView?.invoke()
                         }
                     }
 

@@ -62,6 +62,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import android.view.View
+import android.webkit.WebChromeClient
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import kotlinx.coroutines.launch
 
 @Composable
@@ -70,11 +74,22 @@ fun PlayerScreen(
     padding: PaddingValues,
     relatedVideos: List<YouTubeVideo>,
     onClose: () -> Unit,
-    onPlayRelated: (YouTubeVideo) -> Unit
+    onPlayRelated: (YouTubeVideo) -> Unit,
+    onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
+    onHideCustomView: (() -> Unit)? = null
 ) {
-    BackHandler { onClose() }
     val context = LocalContext.current
     val videoId = video.videoId
+    var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
+
+    BackHandler {
+        if (isFullscreenExpanded) {
+            isFullscreenExpanded = false
+        } else {
+            onClose()
+        }
+    }
+
     var descriptionExpanded by remember(videoId) { mutableStateOf(false) }
     var comments by remember(videoId) { mutableStateOf<List<YouTubeComment>>(emptyList()) }
     var commentsLoading by remember(videoId) { mutableStateOf(true) }
@@ -96,6 +111,41 @@ fun PlayerScreen(
             commentsMessage = it.message ?: "Comments unavailable."
         }
         commentsLoading = false
+    }
+
+    // In-app Fullscreen view mode
+    if (isFullscreenExpanded) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .testTag("player_fullscreen_mode")
+        ) {
+            YouTubeEmbedPlayer(
+                videoId = videoId,
+                modifier = Modifier.fillMaxSize(),
+                autoplay = true,
+                onShowCustomView = onShowCustomView,
+                onHideCustomView = onHideCustomView
+            )
+
+            // Floating exit fullscreen button
+            IconButton(
+                onClick = { isFullscreenExpanded = false },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+                    .background(Color(0x88000000), CircleShape)
+                    .testTag("exit_fullscreen_mode_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.FullscreenExit,
+                    contentDescription = "Exit Fullscreen",
+                    tint = Color.White
+                )
+            }
+        }
+        return
     }
 
     Column(
@@ -127,6 +177,15 @@ fun PlayerScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f)
             )
+            IconButton(
+                onClick = { isFullscreenExpanded = true },
+                modifier = Modifier.testTag("top_fullscreen_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Fullscreen,
+                    contentDescription = "Fullscreen"
+                )
+            }
         }
 
         // Embedded Player 16:9
@@ -139,7 +198,9 @@ fun PlayerScreen(
             YouTubeEmbedPlayer(
                 videoId = videoId,
                 modifier = Modifier.fillMaxSize(),
-                autoplay = true
+                autoplay = true,
+                onShowCustomView = onShowCustomView,
+                onHideCustomView = onHideCustomView
             )
         }
 
@@ -267,8 +328,8 @@ fun PlayerScreen(
                             tint = if (isLiked) Color(0xFFFF0033) else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (isLiked) "Liked" else "Like")
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (isLiked) "Liked" else "Like", maxLines = 1)
                     }
 
                     OutlinedButton(
@@ -286,8 +347,8 @@ fun PlayerScreen(
                             .testTag("share_button")
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Share", modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Share")
+                        Spacer(Modifier.width(4.dp))
+                        Text("Share", maxLines = 1)
                     }
 
                     OutlinedButton(
@@ -312,8 +373,24 @@ fun PlayerScreen(
                             tint = if (isSaved) Color(0xFFFF0033) else MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(Modifier.width(6.dp))
-                        Text(if (isSaved) "Saved" else "Save")
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (isSaved) "Saved" else "Save", maxLines = 1)
+                    }
+
+                    OutlinedButton(
+                        onClick = { isFullscreenExpanded = true },
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("action_fullscreen_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Full", maxLines = 1)
                     }
                 }
             }

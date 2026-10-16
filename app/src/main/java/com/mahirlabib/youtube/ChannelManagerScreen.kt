@@ -1,5 +1,7 @@
 package com.mahirlabib.youtube
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -110,6 +112,41 @@ fun ChannelManagerScreen(
                         placeholder = { Text("UCxxxxxxxxxxxxxxxxxxxxxx") },
                         singleLine = true
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Popular Channel Presets:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "Google Devs" to "UC_x5XG1OV2P6uZZ5FSM9Ttw",
+                            "Android Devs" to "UCVHFbqXqoYvEWM1Ddxl0QDg",
+                            "Veritasium" to "UCsTcErHg8oDvUnTzoqsYeNw",
+                            "The Verge" to "UCBcRF18aGmBrDflS45305iw",
+                            "Kurzgesagt" to "UCsXVk37bltHxD1rDPwtNM8Q",
+                            "Blender" to "UCSMOQeBJ2RAnuFungnQOxLg"
+                        ).forEach { (name, id) ->
+                            Surface(
+                                onClick = { inputChannelId = id },
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                            ) {
+                                Text(
+                                    text = "+ $name",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
                     Button(
                         onClick = {

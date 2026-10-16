@@ -1,12 +1,19 @@
 package com.mahirlabib.youtube
 
+import android.content.Context
 import android.os.Bundle
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebChromeClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,14 +21,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NotificationsNone
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -32,9 +43,9 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +63,29 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.launch
+
+object ThemeStore {
+    private const val PREFS = "youtube_theme_prefs"
+    private const val KEY_DARK_MODE = "is_dark_mode"
+
+    fun isDark(context: Context, defaultSystemDark: Boolean): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return if (prefs.contains(KEY_DARK_MODE)) {
+            prefs.getBoolean(KEY_DARK_MODE, defaultSystemDark)
+        } else {
+            defaultSystemDark
+        }
+    }
+
+    fun setDark(context: Context, dark: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_DARK_MODE, dark)
+            .apply()
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,17 +102,20 @@ class MainActivity : ComponentActivity() {
 private fun YouTubeApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val systemDark = isSystemInDarkTheme()
+    var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
+
     var selectedTab by remember { mutableIntStateOf(0) }
-    var logoTapCount by remember { mutableIntStateOf(0) }
-    var lastLogoTapAt by remember { mutableStateOf(0L) }
-    var showAdminGate by remember { mutableStateOf(false) }
-    var adminLoggedIn by remember { mutableStateOf(false) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
     var isFeedLoading by remember { mutableStateOf(false) }
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // Fullscreen video state
+    var customFullscreenView by remember { mutableStateOf<View?>(null) }
+    var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
     fun playVideo(video: YouTubeVideo) {
         history = WatchHistoryStore.record(
@@ -108,7 +144,7 @@ private fun YouTubeApp() {
         }
     }
 
-    // Auto-load on initial startup if approvedVideos is empty
+    // Auto-load on initial startup if approvedVideos is empty and API key configured
     LaunchedEffect(Unit) {
         if (approvedVideos.isEmpty() && isApiKeyConfigured(BuildConfig.YOUTUBE_API_KEY)) {
             refreshFeed()
@@ -116,16 +152,19 @@ private fun YouTubeApp() {
     }
 
     // Device Back Navigation handler
-    BackHandler(enabled = showAdminGate || adminLoggedIn || activeVideo != null || selectedTab != 0) {
+    BackHandler(enabled = customFullscreenView != null || activeVideo != null || selectedTab != 0) {
         when {
-            showAdminGate -> showAdminGate = false
-            adminLoggedIn -> adminLoggedIn = false
+            customFullscreenView != null -> {
+                customViewCallback?.onCustomViewHidden()
+                customFullscreenView = null
+                customViewCallback = null
+            }
             activeVideo != null -> activeVideo = null
             selectedTab != 0 -> selectedTab = 0
         }
     }
 
-    val youtubeColors = lightColorScheme(
+    val youtubeLightColors = lightColorScheme(
         primary = Color(0xFFFF0033),
         onPrimary = Color.White,
         secondary = Color(0xFF606060),
@@ -133,29 +172,70 @@ private fun YouTubeApp() {
         surface = Color.White,
         onSurface = Color(0xFF0F0F0F),
         surfaceVariant = Color(0xFFF2F2F2),
-        onSurfaceVariant = Color(0xFF606060)
+        onSurfaceVariant = Color(0xFF606060),
+        surfaceContainer = Color(0xFFF8F8F8)
     )
 
-    MaterialTheme(colorScheme = youtubeColors) {
+    val youtubeDarkColors = darkColorScheme(
+        primary = Color(0xFFFF0033),
+        onPrimary = Color.White,
+        secondary = Color(0xFFAAAAAA),
+        background = Color(0xFF0F0F0F),
+        surface = Color(0xFF0F0F0F),
+        onSurface = Color(0xFFF1F1F1),
+        surfaceVariant = Color(0xFF272727),
+        onSurfaceVariant = Color(0xFFAAAAAA),
+        surfaceContainer = Color(0xFF212121)
+    )
+
+    MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
+        // True Fullscreen Video Overlay when triggered by YouTube player
+        if (customFullscreenView != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .testTag("fullscreen_video_overlay")
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                        customFullscreenView ?: View(it)
+                    }
+                )
+
+                IconButton(
+                    onClick = {
+                        customViewCallback?.onCustomViewHidden()
+                        customFullscreenView = null
+                        customViewCallback = null
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .background(Color(0x88000000), CircleShape)
+                        .testTag("exit_fullscreen_icon")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FullscreenExit,
+                        contentDescription = "Exit Fullscreen",
+                        tint = Color.White
+                    )
+                }
+            }
+            return@MaterialTheme
+        }
+
         Scaffold(
-            containerColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
-                if (activeVideo == null && !showAdminGate && !adminLoggedIn) {
+                if (activeVideo == null) {
                     TopAppBar(
                         title = {
                             Row(
-                                modifier = Modifier
-                                    .clickable {
-                                        val now = System.currentTimeMillis()
-                                        logoTapCount = if (now - lastLogoTapAt <= 1_500L) logoTapCount + 1 else 1
-                                        lastLogoTapAt = now
-                                        if (logoTapCount >= 7) {
-                                            logoTapCount = 0
-                                            showAdminGate = true
-                                        }
-                                    }
-                                    .testTag("youtube_logo_button"),
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.testTag("youtube_logo_button")
                             ) {
                                 Surface(
                                     color = Color(0xFFFF0033),
@@ -171,7 +251,7 @@ private fun YouTubeApp() {
                                 }
                                 Text(
                                     text = "YouTube",
-                                    color = Color(0xFF0F0F0F),
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 20.sp,
                                     letterSpacing = (-0.5).sp
@@ -179,26 +259,42 @@ private fun YouTubeApp() {
                             }
                         },
                         actions = {
-                            IconButton(onClick = { /* Cast indicator */ }) {
-                                Icon(Icons.Default.Cast, contentDescription = "Cast", modifier = Modifier.size(22.dp))
+                            // Dark / Light Theme Toggle
+                            IconButton(
+                                onClick = {
+                                    val newTheme = !isDarkMode
+                                    isDarkMode = newTheme
+                                    ThemeStore.setDark(context, newTheme)
+                                },
+                                modifier = Modifier.testTag("theme_toggle_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = if (isDarkMode) "Switch to Light Mode" else "Switch to Dark Mode",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            IconButton(onClick = { /* Cast */ }) {
+                                Icon(Icons.Default.Cast, contentDescription = "Cast", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
                             }
                             IconButton(onClick = { /* Notifications */ }) {
-                                Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", modifier = Modifier.size(22.dp))
+                                Icon(Icons.Default.NotificationsNone, contentDescription = "Notifications", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
                             }
                             IconButton(onClick = { selectedTab = 3 }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(22.dp))
+                                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = Color.White
+                            containerColor = MaterialTheme.colorScheme.surface
                         )
                     )
                 }
             },
             bottomBar = {
-                if (activeVideo == null && !showAdminGate && !adminLoggedIn) {
+                if (activeVideo == null) {
                     NavigationBar(
-                        containerColor = Color.White,
+                        containerColor = MaterialTheme.colorScheme.surface,
                         modifier = Modifier.testTag("bottom_navigation_bar")
                     ) {
                         NavigationBarItem(
@@ -208,12 +304,13 @@ private fun YouTubeApp() {
                             label = { Text("Home") },
                             modifier = Modifier.testTag("nav_home_tab")
                         )
+                        // Channels tab directly replaces Shorts tab
                         NavigationBarItem(
                             selected = selectedTab == 1,
                             onClick = { selectedTab = 1 },
-                            icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Shorts") },
-                            label = { Text("Shorts") },
-                            modifier = Modifier.testTag("nav_shorts_tab")
+                            icon = { Icon(Icons.Default.Subscriptions, contentDescription = "Channels") },
+                            label = { Text("Channels") },
+                            modifier = Modifier.testTag("nav_channels_tab")
                         )
                         NavigationBarItem(
                             selected = selectedTab == 2,
@@ -237,54 +334,22 @@ private fun YouTubeApp() {
             }
         ) { padding ->
             when {
-                showAdminGate -> {
-                    AdminGateScreen(
-                        onSuccess = {
-                            showAdminGate = false
-                            adminLoggedIn = true
-                        },
-                        onCancel = { showAdminGate = false }
-                    )
-                }
-
-                adminLoggedIn -> {
-                    Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(onClick = { adminLoggedIn = false }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                                }
-                                Text(
-                                    text = "Channel Admin",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            TextButton(onClick = { adminLoggedIn = false }) {
-                                Text("Logout")
-                            }
-                        }
-                        ChannelManagerScreen(
-                            padding = PaddingValues(0.dp),
-                            onPlay = { video -> playVideo(video) },
-                            onVideosLoaded = { approvedVideos = it }
-                        )
-                    }
-                }
-
                 activeVideo != null -> {
                     PlayerScreen(
                         video = activeVideo!!,
                         padding = padding,
                         relatedVideos = approvedVideos,
                         onClose = { activeVideo = null },
-                        onPlayRelated = { playVideo(it) }
+                        onPlayRelated = { playVideo(it) },
+                        onShowCustomView = { view, callback ->
+                            customFullscreenView = view
+                            customViewCallback = callback
+                        },
+                        onHideCustomView = {
+                            customViewCallback?.onCustomViewHidden()
+                            customFullscreenView = null
+                            customViewCallback = null
+                        }
                     )
                 }
 
@@ -299,11 +364,12 @@ private fun YouTubeApp() {
                     )
                 }
 
+                // Channels tab directly accessible without secret PIN gate
                 selectedTab == 1 -> {
-                    ShortsFeed(
+                    ChannelManagerScreen(
                         padding = padding,
-                        approvedVideos = approvedVideos,
-                        onOpenWatchPage = { playVideo(it) }
+                        onPlay = { video -> playVideo(video) },
+                        onVideosLoaded = { approvedVideos = it }
                     )
                 }
 

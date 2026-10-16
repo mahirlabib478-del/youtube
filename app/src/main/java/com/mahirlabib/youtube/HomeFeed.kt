@@ -86,19 +86,19 @@ fun HomeFeed(
         ) {
             categories.forEachIndexed { index, label ->
                 val isSelected = selectedCategoryIndex == index
-                Surface(
-                    onClick = { selectedCategoryIndex = index },
-                    color = if (isSelected) Color(0xFF0F0F0F) else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("category_chip_$index")
-                ) {
-                    Text(
-                        text = label,
-                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                    )
-                }
+                    Surface(
+                        onClick = { selectedCategoryIndex = index },
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("category_chip_$index")
+                    ) {
+                        Text(
+                            text = label,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                        )
+                    }
             }
         }
 
@@ -203,7 +203,7 @@ fun HomeFeed(
                         }
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            text = "💡 Tip: Tap YouTube logo 7 times to open Channel Admin",
+                            text = "💡 Tip: Tap the Channels tab below to add and manage your favorite channels anytime",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

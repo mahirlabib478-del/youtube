@@ -124,7 +124,10 @@ private fun YouTubeApp() {
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
     var approvedVideos by remember(context) { mutableStateOf(LocalVideoStore.load(context)) }
     var isFeedLoading by remember { mutableStateOf(false) }
+    var isFeedLoadingMore by remember { mutableStateOf(false) }
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
+    var feedPageTokens by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+    var feedHasMore by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
     // Fullscreen video state
@@ -191,19 +194,83 @@ private fun YouTubeApp() {
         )
     }
 
+    fun mixChannelVideos(pages: List<List<YouTubeVideo>>): List<YouTubeVideo> {
+        val queues = pages.map { page -> ArrayDeque(page.distinctBy { it.videoId }) }.filter { it.isNotEmpty() }
+        val mixed = mutableListOf<YouTubeVideo>()
+        var previousChannel = ""
+        while (queues.any { it.isNotEmpty() }) {
+            val candidates = queues.filter { it.isNotEmpty() }
+            val nextQueue = candidates.firstOrNull { it.first().channelId != previousChannel } ?: candidates.firstOrNull()
+            val next = nextQueue?.removeFirst() ?: break
+            mixed += next
+            previousChannel = next.channelId
+        }
+        return mixed.distinctBy { it.videoId }
+    }
+
     fun refreshFeed() {
+        if (isFeedLoading) return
         scope.launch {
             isFeedLoading = true
             feedErrorMessage = null
             runCatching {
-                YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY)
-            }.onSuccess { vids ->
-                approvedVideos = vids
-                feedErrorMessage = if (vids.isEmpty()) "No public videos found for the saved channels." else null
+                val channels = ApprovedChannelStore.load(context)
+                if (channels.isEmpty()) {
+                    YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY) to emptyMap<String, String?>()
+                } else {
+                    val pages = channels.map { channel ->
+                        channel to YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
+                    }
+                    val mixed = mixChannelVideos(pages.map { it.second.videos })
+                    mixed to pages.associate { (channel, page) -> channel.channelId to page.continuationToken }
+                }
+            }.onSuccess { (videos, tokens) ->
+                if (videos.isNotEmpty()) {
+                    approvedVideos = videos
+                    LocalVideoStore.save(context, videos)
+                }
+                feedPageTokens = tokens
+                feedHasMore = tokens.values.any { !it.isNullOrBlank() }
+                feedErrorMessage = if (videos.isEmpty()) "No public videos found for the saved channels." else null
             }.onFailure { err ->
+                // Keep cached feed visible if refresh fails.
                 feedErrorMessage = err.message ?: "Failed to refresh feed."
             }
             isFeedLoading = false
+        }
+    }
+
+    fun loadMoreFeed() {
+        if (isFeedLoading || isFeedLoadingMore || !feedHasMore) return
+        scope.launch {
+            isFeedLoadingMore = true
+            runCatching {
+                val channels = ApprovedChannelStore.load(context)
+                val pageResults = channels.mapNotNull { channel ->
+                    val token = feedPageTokens[channel.channelId] ?: return@mapNotNull null
+                    runCatching {
+                        channel to YouTubeDataRepository.fetchChannelVideosPage(
+                            channelId = channel.channelId,
+                            channelAvatarUrl = channel.avatarUrl,
+                            continuationToken = token
+                        )
+                    }.getOrNull()
+                }
+                val nextTokens = feedPageTokens.toMutableMap()
+                pageResults.forEach { (channel, page) -> nextTokens[channel.channelId] = page.continuationToken }
+                val newVideos = mixChannelVideos(pageResults.map { it.second.videos })
+                Triple(newVideos, nextTokens, pageResults.isNotEmpty())
+            }.onSuccess { (newVideos, nextTokens, hadPages) ->
+                val merged = (approvedVideos + newVideos).distinctBy { it.videoId }
+                approvedVideos = merged
+                LocalVideoStore.save(context, merged)
+                feedPageTokens = nextTokens
+                feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
+                if (!hadPages && newVideos.isEmpty()) feedHasMore = false
+            }.onFailure { err ->
+                feedErrorMessage = err.message ?: "Failed to load more videos."
+            }
+            isFeedLoadingMore = false
         }
     }
 
@@ -436,6 +503,7 @@ private fun YouTubeApp() {
                                     padding = padding, videos = approvedVideos,
                                     isLoading = isFeedLoading, errorMessage = feedErrorMessage,
                                     onPlayVideo = { playVideo(it) }, onRefresh = { refreshFeed() },
+                                    onLoadMore = { loadMoreFeed() }, isLoadingMore = isFeedLoadingMore,
                                     onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
                                 )
                                 1 -> ChannelManagerScreen(
@@ -503,6 +571,8 @@ private fun YouTubeApp() {
                         errorMessage = feedErrorMessage,
                         onPlayVideo = { playVideo(it) },
                         onRefresh = { refreshFeed() },
+                        onLoadMore = { loadMoreFeed() },
+                        isLoadingMore = isFeedLoadingMore,
                         onOpenChannel = { chId, chTitle, chAvatar ->
                             openChannel(chId, chTitle, chAvatar)
                         }

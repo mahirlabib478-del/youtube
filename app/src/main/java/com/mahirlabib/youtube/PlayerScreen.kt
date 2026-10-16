@@ -347,7 +347,7 @@ fun PlayerScreen(
                 }
             }
 
-            if (!isFullscreenExpanded && !pipMode) {
+            if (!isFullscreenExpanded && !miniMode) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()

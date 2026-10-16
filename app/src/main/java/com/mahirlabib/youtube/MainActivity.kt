@@ -215,8 +215,9 @@ private fun YouTubeApp() {
         if (isFeedLoading || isFeedLoadingMore) return
         scope.launch {
             isFeedLoading = true
-            feedErrorMessage = null
-            runCatching {
+            try {
+                feedErrorMessage = null
+                runCatching {
                 val channels = ApprovedChannelStore.load(context)
                 if (channels.isEmpty()) {
                     Triple(YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY), emptyMap<String, String?>(), 0)
@@ -246,8 +247,10 @@ private fun YouTubeApp() {
             }.onFailure { err ->
                 // Keep cached feed visible if refresh fails.
                 feedErrorMessage = err.message ?: "Failed to refresh feed."
+                }
+            } finally {
+                isFeedLoading = false
             }
-            isFeedLoading = false
         }
     }
 
@@ -255,7 +258,8 @@ private fun YouTubeApp() {
         if (isFeedLoading || isFeedLoadingMore || !feedHasMore) return
         scope.launch {
             isFeedLoadingMore = true
-            runCatching {
+            try {
+                runCatching {
                 val channels = ApprovedChannelStore.load(context)
                 val pageResults = channels.mapNotNull { channel ->
                     val token = feedPageTokens[channel.channelId] ?: return@mapNotNull null
@@ -277,13 +281,15 @@ private fun YouTubeApp() {
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = nextTokens
                 feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
-                feedErrorMessage = if (hasFailedChannels && feedHasMore) {
+                feedErrorMessage = if (hasFailedChannels) {
                     "Some channels couldn't load more videos. Scroll to retry."
                 } else null
             }.onFailure { err ->
                 feedErrorMessage = err.message ?: "Failed to load more videos. Scroll to retry."
+                }
+            } finally {
+                isFeedLoadingMore = false
             }
-            isFeedLoadingMore = false
         }
     }
 

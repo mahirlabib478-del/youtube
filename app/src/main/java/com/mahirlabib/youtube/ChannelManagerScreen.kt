@@ -62,6 +62,7 @@ fun ChannelManagerScreen(
     padding: PaddingValues,
     onPlay: (YouTubeVideo) -> Unit,
     onVideosLoaded: (List<YouTubeVideo>) -> Unit,
+    channelListRefreshKey: Int = 0,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     val context = LocalContext.current
@@ -72,6 +73,10 @@ fun ChannelManagerScreen(
     var isLoadingFeed by remember { mutableStateOf(false) }
     var isAddingChannel by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Manage saved YouTube channels on this device.") }
+
+    androidx.compose.runtime.LaunchedEffect(channelListRefreshKey) {
+        channels = ApprovedChannelStore.load(context)
+    }
 
     LazyColumn(
         modifier = Modifier

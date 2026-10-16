@@ -212,7 +212,7 @@ private fun YouTubeApp() {
     }
 
     fun refreshFeed() {
-        if (isFeedLoading) return
+        if (isFeedLoading || isFeedLoadingMore) return
         scope.launch {
             isFeedLoading = true
             feedErrorMessage = null

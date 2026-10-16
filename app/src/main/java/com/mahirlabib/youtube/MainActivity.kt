@@ -307,12 +307,6 @@ private fun YouTubeApp() {
         }
     }
 
-    // Refresh channel pages on every app start so cached feeds also restore
-    // pagination tokens; otherwise a cached list could never load beyond its first batch.
-    LaunchedEffect(Unit) {
-        refreshFeed()
-    }
-
     // Device Back Navigation handler
     BackHandler(enabled = customFullscreenView != null || selectedChannel != null || activeVideo != null || selectedTab != 0) {
         when {

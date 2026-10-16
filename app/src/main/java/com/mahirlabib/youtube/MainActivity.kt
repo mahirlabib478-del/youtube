@@ -348,17 +348,6 @@ private fun YouTubeApp() {
                 if (activeVideo == null || isMiniPlayer) {
                     Column {
                         // In-App Miniplayer Bar (Sits directly above bottom navigation bar, exactly like actual YouTube)
-                        if (activeVideo != null && isMiniPlayer) {
-                            InAppMiniPlayer(
-                                video = activeVideo!!,
-                                onExpand = { isMiniPlayer = false },
-                                onClose = {
-                                    activeVideo = null
-                                    isMiniPlayer = false
-                                }
-                            )
-                        }
-
                         NavigationBar(
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MaterialTheme.colorScheme.onSurface
@@ -421,28 +410,66 @@ private fun YouTubeApp() {
                     )
                 }
 
-                activeVideo != null && !isMiniPlayer -> {
-                    PlayerScreen(
-                        video = activeVideo!!,
-                        padding = padding,
-                        relatedVideos = approvedVideos,
-                        onClose = { isMiniPlayer = true },
-                        onPlayRelated = { playVideo(it) },
-                        onShowCustomView = { view, callback ->
-                            customFullscreenView = view
-                            customViewCallback = callback
-                        },
-                        onHideCustomView = {
-                            customViewCallback?.onCustomViewHidden()
-                            customFullscreenView = null
-                            customViewCallback = null
-                        },
-                        onOpenChannel = { chId, chTitle, chAvatar ->
-                            isMiniPlayer = true
-                            openChannel(chId, chTitle, chAvatar)
-                        },
-                        miniMode = isMiniPlayer,
-                    )
+                activeVideo != null -> {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (isMiniPlayer) {
+                            when (selectedTab) {
+                                0 -> HomeFeed(
+                                    padding = padding, videos = approvedVideos,
+                                    isLoading = isFeedLoading, errorMessage = feedErrorMessage,
+                                    onPlayVideo = { playVideo(it) }, onRefresh = { refreshFeed() },
+                                    onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
+                                )
+                                1 -> ChannelManagerScreen(
+                                    padding = padding, onPlay = { playVideo(it) },
+                                    onVideosLoaded = { approvedVideos = it },
+                                    onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
+                                )
+                                2 -> LibraryScreen(
+                                    history = history, padding = padding,
+                                    onPlayWatched = { watched ->
+                                        val video = approvedVideos.find { it.videoId == watched.videoId }
+                                            ?: YouTubeVideo(videoId = watched.videoId, title = watched.title,
+                                                channelTitle = watched.channel, publishedAt = "",
+                                                description = watched.description)
+                                        playVideo(video)
+                                    },
+                                    onClearHistory = { WatchHistoryStore.clear(context); history = emptyList() }
+                                )
+                                else -> SearchFeed(
+                                    padding = padding, cachedVideos = approvedVideos, query = searchQuery,
+                                    onQueryChange = { searchQuery = it }, onPlay = { playVideo(it) },
+                                    onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
+                                )
+                            }
+                        }
+                        PlayerScreen(
+                            video = activeVideo!!,
+                            padding = padding,
+                            relatedVideos = approvedVideos,
+                            onClose = {
+                                if (isMiniPlayer) { activeVideo = null; isMiniPlayer = false }
+                                else isMiniPlayer = true
+                            },
+                            onPlayRelated = { playVideo(it) },
+                            onShowCustomView = { view, callback ->
+                                customFullscreenView = view
+                                customViewCallback = callback
+                            },
+                            onHideCustomView = {
+                                customViewCallback?.onCustomViewHidden()
+                                customFullscreenView = null
+                                customViewCallback = null
+                            },
+                            onOpenChannel = { chId, chTitle, chAvatar ->
+                                isMiniPlayer = true
+                                openChannel(chId, chTitle, chAvatar)
+                            },
+                            miniMode = isMiniPlayer,
+                            modifier = if (isMiniPlayer) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp) else Modifier,
+                            onExpandMiniPlayer = { isMiniPlayer = false }
+                        )
+                    }
                 }
 
                 selectedTab == 0 -> {

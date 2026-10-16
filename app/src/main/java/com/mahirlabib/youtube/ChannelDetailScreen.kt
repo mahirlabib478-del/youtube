@@ -140,13 +140,17 @@ fun ChannelDetailScreen(
         // Observe scroll position and pagination state in one long-lived collector.
         // A normal scroll/layout change must not cancel an in-flight network request.
         snapshotFlow {
-            Triple(
+            // Include loading state so the collector wakes up after a page finishes.
+            // Otherwise a token update that arrives while loading can be skipped, leaving
+            // the list stuck even when the viewport is still near the bottom.
+            listOf(
                 shouldLoadMore,
                 continuationToken,
-                hasMoreVideos && allowLoadMore
+                hasMoreVideos && allowLoadMore,
+                isLoadingMore
             )
-        }.distinctUntilChanged().collect { (nearEnd, token, canLoadMore) ->
-            if (nearEnd && canLoadMore && token != null && !isLoadingMore) {
+        }.distinctUntilChanged().collect { (nearEnd, token, canLoadMore, loading) ->
+            if (nearEnd && canLoadMore && token != null && !loading) {
                 isLoadingMore = true
                 try {
                     val nextPage = YouTubeDataRepository.fetchChannelVideosPage(

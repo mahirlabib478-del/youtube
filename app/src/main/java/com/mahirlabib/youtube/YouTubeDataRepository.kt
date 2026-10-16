@@ -116,7 +116,7 @@ object ApprovedChannelStore {
     fun load(context: Context): List<ApprovedChannel> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val raw = prefs.getString(KEY, null)
-        if (!raw.isNullOrBlank() && raw != "[]") {
+        if (raw != null) {
             val list = runCatching {
                 val array = JSONArray(raw)
                 buildList<ApprovedChannel> {
@@ -146,7 +146,7 @@ object ApprovedChannelStore {
                 }
             }.getOrDefault(emptyList())
 
-            if (list.isNotEmpty()) return list
+            return list
         }
 
         val legacyRaw = prefs.getString(LEGACY_KEY, null)
@@ -190,9 +190,8 @@ object ApprovedChannelStore {
 
     fun remove(context: Context, channelId: String): List<ApprovedChannel> {
         val current = load(context).filterNot { it.channelId == channelId }
-        val toSave = current.ifEmpty { DEFAULT_CHANNELS }
-        save(context, toSave)
-        return toSave
+        save(context, current)
+        return current
     }
 
     fun updateChannel(context: Context, updated: ApprovedChannel) {

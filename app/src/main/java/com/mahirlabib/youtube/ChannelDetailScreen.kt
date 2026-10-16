@@ -39,12 +39,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -91,6 +93,8 @@ fun ChannelDetailScreen(
     var continuationToken by remember(channel.channelId) { mutableStateOf<String?>(null) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var hasMoreVideos by remember(channel.channelId) { mutableStateOf(true) }
+    var allowLoadMore by remember(channel.channelId) { mutableStateOf(true) }
+    var loadMoreRetryKey by remember(channel.channelId) { mutableIntStateOf(0) }
 
     // Initial load: Fetch first rich page of videos + continuation token
     LaunchedEffect(channel.channelId) {
@@ -125,8 +129,8 @@ fun ChannelDetailScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore, continuationToken, isLoadingMore, hasMoreVideos) {
-        if (shouldLoadMore && !isLoadingMore && hasMoreVideos && continuationToken != null) {
+    LaunchedEffect(shouldLoadMore, continuationToken, isLoadingMore, hasMoreVideos, allowLoadMore, loadMoreRetryKey) {
+        if (shouldLoadMore && !isLoadingMore && hasMoreVideos && continuationToken != null && allowLoadMore) {
             isLoadingMore = true
             runCatching {
                 val nextPage = YouTubeDataRepository.fetchChannelVideosPage(
@@ -143,7 +147,7 @@ fun ChannelDetailScreen(
                 }
             }.onFailure { error ->
                 uploadsError = error.message ?: "Could not load more videos. Try again later."
-                hasMoreVideos = false
+                allowLoadMore = false
             }
             isLoadingMore = false
         }
@@ -384,19 +388,37 @@ fun ChannelDetailScreen(
                     }
                 }
 
-                if (isLoadingMore) {
+                if (isLoadingMore || (uploadsError != null && hasMoreVideos && continuationToken != null)) {
                     item {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 16.dp),
-                            contentAlignment = Alignment.Center
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = Color(0xFFFF0033),
-                                strokeWidth = 2.5.dp
-                            )
+                            if (isLoadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    color = Color(0xFFFF0033),
+                                    strokeWidth = 2.5.dp
+                                )
+                            } else {
+                                Text(
+                                    text = uploadsError ?: "Could not load more videos.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                TextButton(
+                                    onClick = {
+                                        uploadsError = null
+                                        allowLoadMore = true
+                                        loadMoreRetryKey++
+                                    },
+                                    modifier = Modifier.testTag("channel_load_more_retry")
+                                ) {
+                                    Text("Retry loading videos")
+                                }
+                            }
                         }
                     }
                 }

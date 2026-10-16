@@ -122,13 +122,19 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val video = currentActiveVideoState.value
-        if (video != null && PipSettingsStore.isPipEnabled(this)) {
+        // Only the Floating Video mode should enter PiP. Audio-only mode cannot
+        // be guaranteed by a YouTube iframe once Android backgrounds the WebView.
+        if (currentActiveVideoState.value != null && PipSettingsStore.isPipVideoEnabled(this)) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 try {
-                    val params = PictureInPictureParams.Builder()
+                    val builder = PictureInPictureParams.Builder()
                         .setAspectRatio(Rational(16, 9))
-                        .build()
-                    enterPictureInPictureMode(params)
+                    // Android 12+ can enter PiP as part of the Home gesture, avoiding
+                    // a separate onUserLeaveHint transition animation.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        builder.setAutoEnterEnabled(true)
+                    }
+                    enterPictureInPictureMode(builder.build())
                 } catch (e: Exception) {
                     android.util.Log.w("MainActivity", "Failed to enter Picture-in-Picture mode", e)
                 }

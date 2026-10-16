@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbDown
@@ -211,9 +212,10 @@ fun PlayerScreen(
 
     Box(
         modifier = if (miniMode) {
-            // Keep the same PlayerScreen/WebView composed while the visible mini-player
-            // uses a thumbnail. This avoids disposing and re-creating the active player.
-            Modifier.size(1.dp).alpha(0f).clipToBounds().testTag("player_screen_mini_host")
+            // Keep the WebView at the activity's real content size while mini-player
+            // controls are shown. Shrinking it to 1dp can pause embedded playback.
+            // Retain the same composed WebView so expanding does not restart playback.
+            Modifier.fillMaxSize().alpha(0f).testTag("player_screen_mini_host")
         } else {
             Modifier
                 .fillMaxSize()
@@ -248,6 +250,32 @@ fun PlayerScreen(
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f)
                     )
+                    IconButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                val hostActivity = activity
+                                if (hostActivity != null) {
+                                    runCatching {
+                                        hostActivity.enterPictureInPictureMode(
+                                            PictureInPictureParams.Builder()
+                                                .setAspectRatio(Rational(16, 9))
+                                                .build()
+                                        )
+                                    }.onFailure {
+                                        Toast.makeText(context, "Picture-in-picture could not start. Check Android app PiP permission.", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            } else {
+                                Toast.makeText(context, "Picture-in-picture requires Android 8.0 or newer.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.testTag("player_pip_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PictureInPictureAlt,
+                            contentDescription = "Start picture-in-picture"
+                        )
+                    }
                     IconButton(
                         onClick = { isFullscreenExpanded = true },
                         modifier = Modifier.testTag("top_fullscreen_button")

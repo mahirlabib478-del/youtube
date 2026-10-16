@@ -81,9 +81,6 @@ fun HomeFeed(
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
     val feedListState = rememberLazyListState()
-    LaunchedEffect(refreshVersion) {
-        if (refreshVersion > 0) feedListState.animateScrollToItem(0)
-    }
     val nearFeedEnd by remember {
         derivedStateOf {
             val total = feedListState.layoutInfo.totalItemsCount
@@ -147,33 +144,6 @@ fun HomeFeed(
                     .testTag("home_feed_list"),
                 contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
             ) {
-                // Error message banner if any
-                if (errorMessage != null && videos.isNotEmpty()) {
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = errorMessage,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = onRefresh) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Retry")
-                                }
-                            }
-                        }
-                    }
-                }
-
                 // Loading state with empty list
                 if (isLoading && videos.isEmpty()) {
                     item {

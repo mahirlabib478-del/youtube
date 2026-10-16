@@ -76,10 +76,14 @@ fun HomeFeed(
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit = {},
     isLoadingMore: Boolean = false,
+    refreshVersion: Int = 0,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
     val feedListState = rememberLazyListState()
+    LaunchedEffect(refreshVersion) {
+        if (refreshVersion > 0) feedListState.animateScrollToItem(0)
+    }
     val nearFeedEnd by remember {
         derivedStateOf {
             val total = feedListState.layoutInfo.totalItemsCount

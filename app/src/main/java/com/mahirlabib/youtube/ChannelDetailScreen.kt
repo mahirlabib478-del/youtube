@@ -87,6 +87,7 @@ fun ChannelDetailScreen(
         mutableStateOf(initial)
     }
     var isLoadingOnlineUploads by remember { mutableStateOf(false) }
+    var uploadsError by remember(channel.channelId) { mutableStateOf<String?>(null) }
     var continuationToken by remember(channel.channelId) { mutableStateOf<String?>(null) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var hasMoreVideos by remember(channel.channelId) { mutableStateOf(true) }
@@ -95,6 +96,7 @@ fun ChannelDetailScreen(
     LaunchedEffect(channel.channelId) {
         if (channel.channelId.isNotBlank()) {
             isLoadingOnlineUploads = true
+            uploadsError = null
             runCatching {
                 val page = YouTubeDataRepository.fetchChannelVideosPage(
                     channelId = channel.channelId,
@@ -106,7 +108,9 @@ fun ChannelDetailScreen(
                     channelVideos = combined
                 }
                 continuationToken = page.continuationToken
-                hasMoreVideos = page.continuationToken != null || page.videos.size >= 15
+                hasMoreVideos = page.continuationToken != null
+            }.onFailure { error ->
+                uploadsError = error.message ?: "Could not load channel uploads. Check your internet connection and YouTube API key."
             }
             isLoadingOnlineUploads = false
         }
@@ -137,6 +141,9 @@ fun ChannelDetailScreen(
                 if (nextPage.continuationToken == null) {
                     hasMoreVideos = false
                 }
+            }.onFailure { error ->
+                uploadsError = error.message ?: "Could not load more videos. Try again later."
+                hasMoreVideos = false
             }
             isLoadingMore = false
         }
@@ -309,7 +316,7 @@ fun ChannelDetailScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No public uploads found for this channel.",
+                            text = uploadsError ?: "No public uploads found for this channel.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

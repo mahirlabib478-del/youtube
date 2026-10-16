@@ -492,80 +492,59 @@ object YouTubeDataRepository {
         continuationToken: String? = null
     ): ChannelVideosPage = withContext(Dispatchers.IO) {
         val normalizedId = channelId.trim()
-        val resultVideos = mutableListOf<YouTubeVideo>()
-        var nextToken: String? = null
-
-        if (continuationToken == null) {
-            // Step 1: Instant load from RSS feed
-            val (rssChannelTitle, rssVideos) = fetchChannelRssVideos(normalizedId)
-            val mappedRss = rssVideos.map {
-                it.copy(channelAvatarUrl = if (it.channelAvatarUrl.isBlank()) channelAvatarUrl else it.channelAvatarUrl)
-            }
-            resultVideos.addAll(mappedRss)
-
-            // Step 2: Extract up to 30 videos + continuation token from channel /videos page
-            runCatching {
-                val url = "https://www.youtube.com/channel/$normalizedId/videos"
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 8_000
-                    readTimeout = 10_000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                }
-                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                connection.disconnect()
-
-                val p1 = html.indexOf("ytInitialData = ")
-                if (p1 != -1) {
-                    val start = p1 + "ytInitialData = ".length
-                    val end = html.indexOf(";</script>", start)
-                    if (end != -1) {
-                        val json = JSONObject(html.substring(start, end))
-                        parseVideosFromYouTubeJson(json, normalizedId, rssChannelTitle, channelAvatarUrl, resultVideos)
-                        nextToken = findContinuationToken(json)
-                    }
-                }
-            }
-        } else {
-            // Step 3: Subsequent pages via YouTube Internal Browse API
-            runCatching {
-                val url = "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"
-                val postPayload = JSONObject().apply {
-                    put("context", JSONObject().apply {
-                        put("client", JSONObject().apply {
-                            put("clientName", "WEB")
-                            put("clientVersion", "2.20240101.00.00")
-                            put("hl", "en")
-                            put("gl", "US")
-                        })
-                    })
-                    put("continuation", continuationToken)
-                }
-
-                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 10_000
-                    readTimeout = 12_000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                }
-                connection.outputStream.use { os ->
-                    os.write(postPayload.toString().toByteArray(Charsets.UTF_8))
-                }
-                val responseText = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                connection.disconnect()
-
-                val json = JSONObject(responseText)
-                parseVideosFromYouTubeJson(json, normalizedId, "", channelAvatarUrl, resultVideos)
-                nextToken = findContinuationToken(json)
-            }
+        require(isValidYouTubeChannelId(normalizedId)) { "Invalid YouTube channel ID." }
+        val apiKey = BuildConfig.YOUTUBE_API_KEY
+        require(apiKey.isNotBlank() && !apiKey.contains("YOUR_", ignoreCase = true) && !apiKey.contains("PLACEHOLDER", ignoreCase = true)) {
+            "YouTube Data API key is not configured. Add YOUTUBE_API_KEY to GitHub Actions secrets."
         }
 
-        val deduplicated = resultVideos.distinctBy { it.videoId }
-        ChannelVideosPage(deduplicated, nextToken)
+        // Use the official YouTube Data API instead of scraping channel HTML or
+        // calling the undocumented youtubei browse endpoint.
+        val channelUrl = "https://www.googleapis.com/youtube/v3/channels" +
+            "?part=contentDetails,snippet&id=${encode(normalizedId)}&key=${encode(apiKey)}"
+        val channelResponse = getJson(channelUrl)
+        val channelItem = channelResponse.optJSONArray("items")?.optJSONObject(0)
+            ?: return@withContext ChannelVideosPage(emptyList(), null)
+        val uploadsPlaylistId = channelItem.optJSONObject("contentDetails")
+            ?.optJSONObject("relatedPlaylists")
+            ?.optString("uploads")
+            .orEmpty()
+        if (uploadsPlaylistId.isBlank()) return@withContext ChannelVideosPage(emptyList(), null)
+
+        val pageParam = continuationToken?.takeIf { it.isNotBlank() }
+            ?.let { "&pageToken=${encode(it)}" }.orEmpty()
+        val playlistUrl = "https://www.googleapis.com/youtube/v3/playlistItems" +
+            "?part=snippet,contentDetails&playlistId=${encode(uploadsPlaylistId)}" +
+            "&maxResults=30$pageParam&key=${encode(apiKey)}"
+        val response = getJson(playlistUrl)
+        val items = response.optJSONArray("items") ?: JSONArray()
+        val channelTitle = channelItem.optJSONObject("snippet")?.optString("title").orEmpty()
+        val videos = buildList {
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val snippet = item.optJSONObject("snippet") ?: continue
+                val videoId = snippet.optJSONObject("resourceId")?.optString("videoId")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: item.optJSONObject("contentDetails")?.optString("videoId")?.takeIf { it.isNotBlank() }
+                    ?: continue
+                val thumbnails = snippet.optJSONObject("thumbnails")
+                val title = snippet.optString("title").takeUnless { it.isNullOrBlank() } ?: "Untitled video"
+                add(
+                    YouTubeVideo(
+                        videoId = videoId,
+                        title = title,
+                        channelTitle = snippet.optString("channelTitle").takeUnless { it.isNullOrBlank() } ?: channelTitle,
+                        publishedAt = snippet.optString("publishedAt"),
+                        description = snippet.optString("description"),
+                        channelId = normalizedId,
+                        channelAvatarUrl = channelAvatarUrl,
+                        viewCount = ""
+                    )
+                )
+            }
+        }
+        val nextToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+        ChannelVideosPage(videos.distinctBy { it.videoId }, nextToken)
     }
 
     private fun parseVideosFromYouTubeJson(

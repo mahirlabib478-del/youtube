@@ -364,123 +364,39 @@ object YouTubeDataRepository {
     suspend fun resolveChannelInput(context: Context, apiKey: String, rawInput: String): ApprovedChannel =
         withContext(Dispatchers.IO) {
             val input = rawInput.trim()
-            if (input.isBlank()) throw IllegalArgumentException("Please enter a channel name, handle, or URL.")
+            require(input.isNotBlank()) { "Please enter a channel name, handle, or URL." }
+            require(isApiKeyConfigured(apiKey)) { "YouTube Data API key is not configured. Add YOUTUBE_API_KEY to GitHub Actions secrets." }
 
-            // 1. Direct 24-character UC... Channel ID
-            if (isValidYouTubeChannelId(input)) {
-                return@withContext fetchChannelDetails(apiKey, input)
-            }
+            // Resolve a direct channel ID or /channel/ URL without scraping YouTube HTML.
+            if (isValidYouTubeChannelId(input)) return@withContext fetchChannelDetails(apiKey, input)
+            val channelUrlMatch = Regex("""youtube\\.com/channel/(UC[A-Za-z0-9_-]{22})""").find(input)
+            if (channelUrlMatch != null) return@withContext fetchChannelDetails(apiKey, channelUrlMatch.groupValues[1])
 
-            // 2. Channel URL containing /channel/UC...
-            val channelUrlRegex = Regex("""youtube\.com/channel/(UC[a-zA-Z0-9_-]{22})""")
-            val channelMatch = channelUrlRegex.find(input)
-            if (channelMatch != null) {
-                val chId = channelMatch.groupValues[1]
-                return@withContext fetchChannelDetails(apiKey, chId)
-            }
-
-            // 3. Handle like @handle or URL containing /@handle
-            val handleRegex = Regex("""(?:youtube\.com/)?@([a-zA-Z0-9._-]+)""")
-            val handleMatch = handleRegex.find(input)
-            val handle = handleMatch?.groupValues?.get(1) ?: if (input.startsWith("@")) input.removePrefix("@") else null
-
+            // The official channels.list forHandle parameter supports @handles.
+            val handleMatch = Regex("""(?:youtube\\.com/)?@([A-Za-z0-9._-]+)""").find(input)
+            val handle = handleMatch?.groupValues?.get(1) ?: input.takeIf { it.startsWith("@") }?.removePrefix("@")
             if (!handle.isNullOrBlank()) {
-                val resolvedFromHandle = runCatching {
-                    val url = "https://www.youtube.com/@$handle"
-                    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-                        requestMethod = "GET"
-                        connectTimeout = 8_000
-                        readTimeout = 10_000
-                        instanceFollowRedirects = true
-                        setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                        setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                    }
-                    val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                    connection.disconnect()
-
-                    val canonicalMatch = Regex("""canonical"\s+href="https://www\.youtube\.com/channel/(UC[a-zA-Z0-9_-]{22})""").find(html)
-                        ?: Regex(""""externalId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
-                        ?: Regex(""""channelId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
-                    val chId = canonicalMatch?.groupValues?.get(1)
-
-                    val titleMatch = Regex("""property="og:title"\s+content="([^"]+)"""").find(html)
-                        ?: Regex("""name="title"\s+content="([^"]+)"""").find(html)
-                    val title = titleMatch?.groupValues?.get(1) ?: "@$handle"
-
-                    val avatarMatch = Regex("""property="og:image"\s+content="([^"]+)"""").find(html)
-                        ?: Regex("""https://yt3\.(?:googleusercontent|ggpht)\.com/[^"'\s<>]+""").find(html)
-                    val avatar = avatarMatch?.let { if (it.groupValues.size > 1) it.groupValues[1] else it.value }.orEmpty()
-
-                    if (!chId.isNullOrBlank()) {
-                        ApprovedChannel(channelId = chId, title = title, avatarUrl = avatar)
-                    } else null
-                }.getOrNull()
-
-                if (resolvedFromHandle != null) {
-                    return@withContext resolvedFromHandle
-                }
+                val response = getJson("https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&forHandle=${encode(handle)}&key=${encode(apiKey)}")
+                val id = response.optJSONArray("items")?.optJSONObject(0)?.optString("id").orEmpty()
+                if (isValidYouTubeChannelId(id)) return@withContext fetchChannelDetails(apiKey, id)
             }
 
-            // 4. Video URL (e.g. youtu.be/... or youtube.com/watch?v=...)
-            val videoIdRegex = Regex("""(?:v=|youtu\.be/|embed/|shorts/)([a-zA-Z0-9_-]{11})""")
-            val videoMatch = videoIdRegex.find(input)
+            // A video URL resolves through the official videos.list endpoint.
+            val videoMatch = Regex("""(?:v=|youtu\\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})""").find(input)
             if (videoMatch != null) {
-                val vId = videoMatch.groupValues[1]
-                val resolvedFromVideo = runCatching {
-                    val oembedJson = getJson("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$vId&format=json")
-                    val authorUrl = oembedJson.optString("author_url", "")
-                    val authorName = oembedJson.optString("author_name", "")
-                    if (authorUrl.isNotBlank()) {
-                        resolveChannelInput(context, apiKey, authorUrl)
-                    } else null
-                }.getOrNull()
-
-                if (resolvedFromVideo != null) {
-                    return@withContext resolvedFromVideo
-                }
+                val response = getJson("https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${encode(videoMatch.groupValues[1])}&key=${encode(apiKey)}")
+                val id = response.optJSONArray("items")?.optJSONObject(0)?.optJSONObject("snippet")?.optString("channelId").orEmpty()
+                if (isValidYouTubeChannelId(id)) return@withContext fetchChannelDetails(apiKey, id)
             }
 
-            // 5. Plain text search for channel name or query (e.g. "Veritasium" or "Marques Brownlee")
-            val searchResolved = runCatching {
-                val searchUrl = "https://www.youtube.com/results?search_query=${encode(input)}&sp=EgIQAg%253D%253D"
-                val connection = (URL(searchUrl).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 8_000
-                    readTimeout = 10_000
-                    instanceFollowRedirects = true
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
-                }
-                val html = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                connection.disconnect()
-
-                val chIdMatch = Regex(""""channelId":"(UC[a-zA-Z0-9_-]{22})"""").find(html)
-                if (chIdMatch != null) {
-                    val chId = chIdMatch.groupValues[1]
-                    fetchChannelDetails(apiKey, chId)
-                } else null
-            }.getOrNull()
-
-            if (searchResolved != null) {
-                return@withContext searchResolved
+            // Plain channel names use the official search.list API.
+            val response = getJson("https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encode(input)}&maxResults=5&key=${encode(apiKey)}")
+            val items = response.optJSONArray("items") ?: JSONArray()
+            if (items.length() > 0) {
+                val firstId = items.optJSONObject(0)?.optJSONObject("id")?.optString("channelId").orEmpty()
+                if (isValidYouTubeChannelId(firstId)) return@withContext fetchChannelDetails(apiKey, firstId)
             }
-
-            if (isApiKeyConfigured(apiKey)) {
-                val apiSearch = runCatching {
-                    val json = getJson("https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&q=${encode(input)}&maxResults=1&key=${encode(apiKey)}")
-                    val items = json.optJSONArray("items")
-                    if (items != null && items.length() > 0) {
-                        val item = items.getJSONObject(0)
-                        val id = item.optJSONObject("id")?.optString("channelId").orEmpty()
-                        if (id.isNotBlank()) {
-                            fetchChannelDetails(apiKey, id)
-                        } else null
-                    } else null
-                }.getOrNull()
-                if (apiSearch != null) return@withContext apiSearch
-            }
-
-            throw IllegalArgumentException("Could not find a YouTube channel for \"$input\". Please check the name or handle.")
+            throw IllegalArgumentException("Could not find a YouTube channel for \\"$input\\". Please check the name or handle.")
         }
 
     /**

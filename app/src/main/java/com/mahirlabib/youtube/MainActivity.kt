@@ -128,6 +128,7 @@ private fun YouTubeApp() {
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
     var feedPageTokens by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
     var feedHasMore by remember { mutableStateOf(false) }
+    var feedRefreshVersion by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
 
     // Fullscreen video state
@@ -194,10 +195,10 @@ private fun YouTubeApp() {
         )
     }
 
-    fun mixChannelVideos(pages: List<List<YouTubeVideo>>): List<YouTubeVideo> {
+    fun mixChannelVideos(pages: List<List<YouTubeVideo>>, previousChannelId: String = ""): List<YouTubeVideo> {
         val queues = pages.map { page -> ArrayDeque(page.distinctBy { it.videoId }) }.filter { it.isNotEmpty() }
         val mixed = mutableListOf<YouTubeVideo>()
-        var previousChannel = ""
+        var previousChannel = previousChannelId
         while (queues.any { it.isNotEmpty() }) {
             val candidates = queues.filter { it.isNotEmpty() }
             val nextQueue = candidates.firstOrNull { it.first().channelId != previousChannel } ?: candidates.firstOrNull()
@@ -231,6 +232,7 @@ private fun YouTubeApp() {
                 }
                 feedPageTokens = tokens
                 feedHasMore = tokens.values.any { !it.isNullOrBlank() }
+                feedRefreshVersion++
                 feedErrorMessage = if (videos.isEmpty()) "No public videos found for the saved channels." else null
             }.onFailure { err ->
                 // Keep cached feed visible if refresh fails.
@@ -258,7 +260,7 @@ private fun YouTubeApp() {
                 }
                 val nextTokens = feedPageTokens.toMutableMap()
                 pageResults.forEach { (channel, page) -> nextTokens[channel.channelId] = page.continuationToken }
-                val newVideos = mixChannelVideos(pageResults.map { it.second.videos })
+                val newVideos = mixChannelVideos(pageResults.map { it.second.videos }, approvedVideos.lastOrNull()?.channelId.orEmpty())
                 Triple(newVideos, nextTokens, pageResults.isNotEmpty())
             }.onSuccess { (newVideos, nextTokens, hadPages) ->
                 val merged = (approvedVideos + newVideos).distinctBy { it.videoId }
@@ -504,6 +506,7 @@ private fun YouTubeApp() {
                                     isLoading = isFeedLoading, errorMessage = feedErrorMessage,
                                     onPlayVideo = { playVideo(it) }, onRefresh = { refreshFeed() },
                                     onLoadMore = { loadMoreFeed() }, isLoadingMore = isFeedLoadingMore,
+                                    refreshVersion = feedRefreshVersion,
                                     onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
                                 )
                                 1 -> ChannelManagerScreen(
@@ -573,6 +576,7 @@ private fun YouTubeApp() {
                         onRefresh = { refreshFeed() },
                         onLoadMore = { loadMoreFeed() },
                         isLoadingMore = isFeedLoadingMore,
+                        refreshVersion = feedRefreshVersion,
                         onOpenChannel = { chId, chTitle, chAvatar ->
                             openChannel(chId, chTitle, chAvatar)
                         }

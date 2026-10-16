@@ -197,8 +197,19 @@ private fun YouTubeApp() {
         )
     }
 
-    fun mixChannelVideos(pages: List<List<YouTubeVideo>>, previousChannelId: String = ""): List<YouTubeVideo> {
-        val queues = pages.map { page -> ArrayDeque(page.distinctBy { it.videoId }) }.filter { it.isNotEmpty() }
+    fun mixChannelVideos(
+        pages: List<List<YouTubeVideo>>,
+        previousChannelId: String = "",
+        reshuffle: Boolean = false
+    ): List<YouTubeVideo> {
+        // A refresh often returns the exact same newest uploads. Reorder the fetched
+        // candidates so refresh is visible even when no channel has published a new video.
+        // Keep pagination pages in their original order; only the refresh's first batch
+        // is shuffled, while round-robin mixing still avoids consecutive same-channel items.
+        val queues = pages.map { page ->
+            val unique = page.distinctBy { it.videoId }
+            ArrayDeque(if (reshuffle) unique.shuffled() else unique)
+        }.filter { it.isNotEmpty() }
         val mixed = mutableListOf<YouTubeVideo>()
         var previousChannel = previousChannelId
         while (queues.any { it.isNotEmpty() }) {
@@ -227,7 +238,10 @@ private fun YouTubeApp() {
                             channel to YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
                         }.getOrNull()
                     }
-                    val mixed = mixChannelVideos(pages.map { it.second.videos })
+                    val mixed = mixChannelVideos(
+                        pages.map { it.second.videos },
+                        reshuffle = true
+                    )
                     val refreshedTokens = pages.associate { (channel, page) -> channel.channelId to page.continuationToken }
                     // Keep retry tokens for channels that failed, but discard tokens for
                     // channels that were removed from the approved-channel list.

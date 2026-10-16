@@ -113,98 +113,92 @@ fun PlayerScreen(
         commentsLoading = false
     }
 
-    // In-app Fullscreen view mode
-    if (isFullscreenExpanded) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .testTag("player_fullscreen_mode")
-        ) {
-            YouTubeEmbedPlayer(
-                videoId = videoId,
-                modifier = Modifier.fillMaxSize(),
-                autoplay = true,
-                onShowCustomView = onShowCustomView,
-                onHideCustomView = onHideCustomView
-            )
-
-            // Floating exit fullscreen button
-            IconButton(
-                onClick = { isFullscreenExpanded = false },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-                    .background(Color(0x88000000), CircleShape)
-                    .testTag("exit_fullscreen_mode_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FullscreenExit,
-                    contentDescription = "Exit Fullscreen",
-                    tint = Color.White
-                )
-            }
-        }
-        return
-    }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(padding)
-            .background(MaterialTheme.colorScheme.background)
+            .then(
+                if (isFullscreenExpanded) Modifier.background(Color.Black)
+                else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
+            )
             .testTag("player_screen")
     ) {
-        // Top Back Navigation bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier.testTag("player_back_button")
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to feed"
-                )
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (!isFullscreenExpanded) {
+                // Top Back Navigation bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.testTag("player_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to feed"
+                        )
+                    }
+                    Text(
+                        text = "Playing Video",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { isFullscreenExpanded = true },
+                        modifier = Modifier.testTag("top_fullscreen_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen"
+                        )
+                    }
+                }
             }
-            Text(
-                text = "Playing Video",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f)
-            )
-            IconButton(
-                onClick = { isFullscreenExpanded = true },
-                modifier = Modifier.testTag("top_fullscreen_button")
+
+            // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
+            Box(
+                modifier = if (isFullscreenExpanded) {
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black)
+                        .testTag("player_fullscreen_mode")
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color.Black)
+                }
             ) {
-                Icon(
-                    imageVector = Icons.Default.Fullscreen,
-                    contentDescription = "Fullscreen"
+                YouTubeEmbedPlayer(
+                    videoId = videoId,
+                    modifier = Modifier.fillMaxSize(),
+                    autoplay = true,
+                    onShowCustomView = onShowCustomView,
+                    onHideCustomView = onHideCustomView
                 )
+
+                if (isFullscreenExpanded) {
+                    IconButton(
+                        onClick = { isFullscreenExpanded = false },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .background(Color(0x88000000), CircleShape)
+                            .testTag("exit_fullscreen_mode_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FullscreenExit,
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White
+                        )
+                    }
+                }
             }
-        }
 
-        // Embedded Player 16:9
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
-                .background(Color.Black)
-        ) {
-            YouTubeEmbedPlayer(
-                videoId = videoId,
-                modifier = Modifier.fillMaxSize(),
-                autoplay = true,
-                onShowCustomView = onShowCustomView,
-                onHideCustomView = onHideCustomView
-            )
-        }
-
-        // Scrollable content details & comments
+            if (!isFullscreenExpanded) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -585,4 +579,6 @@ fun PlayerScreen(
             }
         }
     }
+}
+}
 }

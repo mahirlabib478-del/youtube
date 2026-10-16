@@ -161,7 +161,16 @@ fun ChannelManagerScreen(
                                 val details = YouTubeDataRepository.fetchChannelDetails(BuildConfig.YOUTUBE_API_KEY, id)
                                 channels = ApprovedChannelStore.add(context, id, details.title, details.avatarUrl)
                                 inputChannelId = ""
-                                statusMessage = "Added \"${details.title}\" to approved channels!"
+                                statusMessage = "Added \"${details.title}\"! Loading latest videos…"
+                                runCatching {
+                                    YouTubeDataRepository.latestVideos(context, BuildConfig.YOUTUBE_API_KEY)
+                                }.onSuccess { vids ->
+                                    loadedVideos = vids
+                                    onVideosLoaded(vids)
+                                    statusMessage = "Added \"${details.title}\" and updated feed with ${vids.size} videos!"
+                                }.onFailure {
+                                    statusMessage = "Added \"${details.title}\" to saved channels."
+                                }
                                 isAddingChannel = false
                             }
                         },

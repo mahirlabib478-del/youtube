@@ -33,6 +33,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,12 +51,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
 
 /**
- * Direct YouTube Embedded Player.
- * - Plays embedded videos directly and smoothly in-app without loading stalls.
- * - Suppresses "Watch on YouTube" redirects, suggested videos, recommendation grids, and end-screen cards.
- * - Keeps player focused strictly on the playing video without external web clutter.
+ * Direct YouTube Embedded Player with isolated video lifecycle.
+ * - Wraps each video in key(videoId) so switching videos completely refreshes the player instance.
+ * - Eliminates black-screen freeze by avoiding static pauseTimers() calls.
+ * - Suppresses "Watch on YouTube" redirects, suggested video grids, and recommendation overlays.
  */
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeEmbedPlayer(
     videoId: String,
@@ -65,18 +66,44 @@ fun YouTubeEmbedPlayer(
     onHideCustomView: (() -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
-    var errorMessage by remember(videoId) { mutableStateOf<String?>(null) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var reloadTrigger by remember(videoId) { mutableStateOf(0) }
 
-    DisposableEffect(videoId) {
+    key(videoId) {
+        YouTubeEmbedPlayerInstance(
+            videoId = videoId,
+            modifier = modifier,
+            autoplay = autoplay,
+            onPlaybackError = onPlaybackError,
+            onShowCustomView = onShowCustomView,
+            onHideCustomView = onHideCustomView
+        )
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun YouTubeEmbedPlayerInstance(
+    videoId: String,
+    modifier: Modifier = Modifier,
+    autoplay: Boolean = true,
+    onPlaybackError: ((String) -> Unit)? = null,
+    onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
+    onHideCustomView: (() -> Unit)? = null
+) {
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var reloadTrigger by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(Unit) {
         onDispose {
             webViewRef?.let { wv ->
-                wv.onPause()
-                wv.pauseTimers()
-                wv.stopLoading()
-                wv.loadUrl("about:blank")
-                wv.destroy()
+                try {
+                    wv.stopLoading()
+                    wv.loadUrl("about:blank")
+                    wv.onPause()
+                    wv.destroy()
+                } catch (e: Exception) {
+                    Log.w("YouTubeEmbedPlayer", "Error disposing WebView", e)
+                }
             }
             webViewRef = null
         }
@@ -92,6 +119,10 @@ fun YouTubeEmbedPlayer(
             factory = { ctx ->
                 WebView(ctx).apply {
                     webViewRef = this
+                    // Ensure process JS timers and WebView are actively running
+                    resumeTimers()
+                    onResume()
+
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,

@@ -34,6 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +62,7 @@ val DEMO_VIDEO = YouTubeVideo(
     channelAvatarUrl = "https://yt3.googleusercontent.com/ytc/AIdro_k60j2uF-1200=s88-c-k-c0x00ffffff-no-rj"
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeFeed(
     padding: PaddingValues,
@@ -86,29 +90,36 @@ fun HomeFeed(
         ) {
             categories.forEachIndexed { index, label ->
                 val isSelected = selectedCategoryIndex == index
-                    Surface(
-                        onClick = { selectedCategoryIndex = index },
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.testTag("category_chip_$index")
-                    ) {
-                        Text(
-                            text = label,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelLarge,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                        )
-                    }
+                Surface(
+                    onClick = { selectedCategoryIndex = index },
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("category_chip_$index")
+                ) {
+                    Text(
+                        text = label,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
 
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = isLoading,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .testTag("home_feed_list"),
-            contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+                .testTag("home_pull_to_refresh")
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("home_feed_list"),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)
+            ) {
 
         // Error message banner if any
         if (errorMessage != null && videos.isNotEmpty()) {
@@ -230,6 +241,7 @@ fun HomeFeed(
             Spacer(Modifier.height(16.dp))
         }
     }
+}
 }
 }
 

@@ -144,9 +144,9 @@ private fun YouTubeApp() {
         }
     }
 
-    // Auto-load on initial startup if approvedVideos is empty and API key configured
+    // Auto-load latest videos from channels on startup
     LaunchedEffect(Unit) {
-        if (approvedVideos.isEmpty() && isApiKeyConfigured(BuildConfig.YOUTUBE_API_KEY)) {
+        if (approvedVideos.size <= 4) {
             refreshFeed()
         }
     }

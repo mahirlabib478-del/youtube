@@ -288,11 +288,6 @@ fun ChannelDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "${channelVideos.size} videos uploaded",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
 
@@ -331,7 +326,7 @@ fun ChannelDetailScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "Uploads (${channelVideos.size})",
+                            text = "Uploads",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -348,7 +343,7 @@ fun ChannelDetailScreen(
 
             // Surface initial pagination/API errors even when cached videos exist,
             // so a cached 50-video list cannot silently look like the end of the channel.
-            if (uploadsError != null && continuationToken == null && !isLoadingOnlineUploads) {
+            if (uploadsError != null && channelVideos.isEmpty() && continuationToken == null && !isLoadingOnlineUploads) {
                 item {
                     Column(
                         modifier = Modifier
@@ -452,7 +447,7 @@ fun ChannelDetailScreen(
                     }
                 }
 
-                if (isLoadingMore || (uploadsError != null && hasMoreVideos && continuationToken != null)) {
+                if (isLoadingMore) {
                     item {
                         Column(
                             modifier = Modifier

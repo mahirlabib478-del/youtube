@@ -431,7 +431,7 @@ object YouTubeDataRepository {
             ?.let { "&pageToken=${encode(it)}" }.orEmpty()
         val playlistUrl = "https://www.googleapis.com/youtube/v3/playlistItems" +
             "?part=snippet,contentDetails&playlistId=${encode(uploadsPlaylistId)}" +
-            "&maxResults=30$pageParam&key=${encode(apiKey)}"
+            "&maxResults=50$pageParam&key=${encode(apiKey)}"
         val response = getJson(playlistUrl)
         val items = response.optJSONArray("items") ?: JSONArray()
         val channelTitle = channelItem.optJSONObject("snippet")?.optString("title").orEmpty()

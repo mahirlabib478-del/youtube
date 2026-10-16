@@ -227,7 +227,7 @@ private fun YouTubeApp() {
                         }.getOrNull()
                     }
                     val mixed = mixChannelVideos(pages.map { it.second.videos })
-                    mixed to pages.associate { (channel, page) -> channel.channelId to page.continuationToken }
+                    mixed to (feedPageTokens + pages.associate { (channel, page) -> channel.channelId to page.continuationToken })
                 }
             }.onSuccess { (videos, tokens) ->
                 if (videos.isNotEmpty()) {

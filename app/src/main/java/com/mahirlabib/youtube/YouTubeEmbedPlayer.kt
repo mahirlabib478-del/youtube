@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -115,7 +116,7 @@ private fun YouTubeEmbedPlayerInstance(
             .testTag("youtube_embed_player_container")
     ) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().clipToBounds(),
             factory = { ctx ->
                 WebView(ctx).apply {
                     webViewRef = this
@@ -124,6 +125,8 @@ private fun YouTubeEmbedPlayerInstance(
                     onResume()
 
                     setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    clipChildren = true
+                    clipToPadding = true
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT

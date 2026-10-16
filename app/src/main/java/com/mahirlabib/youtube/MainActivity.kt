@@ -280,7 +280,7 @@ private fun YouTubeApp(
             selectedChannel != null -> {
                 selectedChannel = null
             }
-            activeVideo != null && !isMiniPlayer -> {
+            activeVideo != null -> {
                 // Smoothly collapse to In-App MiniPlayer just like actual YouTube!
                 isMiniPlayer = true
             }
@@ -577,7 +577,8 @@ private fun YouTubeApp(
                         onOpenChannel = { chId, chTitle, chAvatar ->
                             isMiniPlayer = true
                             openChannel(chId, chTitle, chAvatar)
-                        }
+                        },
+                        miniMode = isMiniPlayer
                     )
                 }
 

@@ -133,15 +133,27 @@ private fun YouTubeApp() {
 
     val activity = context as? ComponentActivity
 
+    // Keep the entry orientation stable so native YouTube fullscreen exits back to
+    // the same layout instead of letting the device sensor trigger another rotation.
+    val orientationBeforeYouTubeFullscreen = remember(activity) {
+        activity?.resources?.configuration?.orientation
+            ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
+    }
+
     LaunchedEffect(customFullscreenView) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
         if (customFullscreenView != null) {
-            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            insetsController.systemBarsBehavior =
+                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         } else {
-            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity.requestedOrientation = when (orientationBeforeYouTubeFullscreen) {
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
+                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            }
             insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
         }
     }

@@ -59,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -117,6 +118,7 @@ private fun YouTubeApp() {
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
     var selectedTab by remember { mutableIntStateOf(0) }
+    var lastHomeTapTime by remember { mutableLongStateOf(0L) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var isMiniPlayer by remember { mutableStateOf(false) }
     var selectedChannel by remember { mutableStateOf<ChannelDetailState?>(null) }
@@ -435,8 +437,16 @@ private fun YouTubeApp() {
                             NavigationBarItem(
                                 selected = selectedTab == 0 && selectedChannel == null,
                                 onClick = {
+                                    val now = System.currentTimeMillis()
+                                    val isRapidRepeatTap = lastHomeTapTime != 0L && now - lastHomeTapTime <= 500L
                                     selectedTab = 0
                                     selectedChannel = null
+                                    if (isRapidRepeatTap) {
+                                        refreshFeed()
+                                        lastHomeTapTime = 0L
+                                    } else {
+                                        lastHomeTapTime = now
+                                    }
                                 },
                                 icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
                                 label = { Text("Home") },

@@ -272,8 +272,11 @@ private fun YouTubeApp() {
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = nextTokens
                 feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
+                feedErrorMessage = if (!hadPages && feedHasMore) {
+                    "Couldn't load more videos. Scroll to retry."
+                } else null
             }.onFailure { err ->
-                feedErrorMessage = err.message ?: "Failed to load more videos."
+                feedErrorMessage = err.message ?: "Failed to load more videos. Scroll to retry."
             }
             isFeedLoadingMore = false
         }

@@ -570,8 +570,8 @@ object YouTubeDataRepository {
      */
     suspend fun latestVideos(context: Context, apiKey: String): List<YouTubeVideo> =
         withContext(Dispatchers.IO) {
-            val channels = ApprovedChannelStore.load(context).ifEmpty { ApprovedChannelStore.DEFAULT_CHANNELS }
-            if (channels.isEmpty()) return@withContext LocalVideoStore.DEFAULT_EMBED_VIDEOS
+            val channels = ApprovedChannelStore.load(context)
+            if (channels.isEmpty()) return@withContext emptyList()
 
             val fetchedVideos = mutableListOf<YouTubeVideo>()
 
@@ -774,7 +774,7 @@ object YouTubeDataRepository {
             val normalizedQuery = query.trim()
             if (normalizedQuery.isBlank()) return@withContext emptyList()
 
-            val channels = ApprovedChannelStore.load(context).ifEmpty { ApprovedChannelStore.DEFAULT_CHANNELS }
+            val channels = ApprovedChannelStore.load(context)
             val allLocal = LocalVideoStore.load(context)
 
             val apiResults = mutableListOf<YouTubeVideo>()

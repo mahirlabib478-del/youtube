@@ -3,9 +3,6 @@ package com.mahirlabib.youtube
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.app.PictureInPictureParams
-import android.os.Build
-import android.util.Rational
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
@@ -47,7 +44,6 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbDown
@@ -108,8 +104,7 @@ fun PlayerScreen(
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> },
-    miniMode: Boolean = false,
-    pipMode: Boolean = false
+    miniMode: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -220,14 +215,14 @@ fun PlayerScreen(
             Modifier
                 .fillMaxSize()
                 .then(
-                    if (isFullscreenExpanded || pipMode) Modifier.background(Color.Black)
+                    if (isFullscreenExpanded) Modifier.background(Color.Black)
                     else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
                 )
-                .testTag(if (pipMode) "player_screen_pip_host" else "player_screen")
+                .testTag("player_screen")
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (!isFullscreenExpanded && !pipMode) {
+            if (!isFullscreenExpanded) {
                 // Top Back Navigation bar
                 Row(
                     modifier = Modifier
@@ -251,32 +246,6 @@ fun PlayerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                val hostActivity = activity
-                                if (hostActivity != null) {
-                                    runCatching {
-                                        hostActivity.enterPictureInPictureMode(
-                                            PictureInPictureParams.Builder()
-                                                .setAspectRatio(Rational(16, 9))
-                                                .build()
-                                        )
-                                    }.onFailure {
-                                        Toast.makeText(context, "Picture-in-picture could not start. Check Android app PiP permission.", Toast.LENGTH_LONG).show()
-                                    }
-                                }
-                            } else {
-                                Toast.makeText(context, "Picture-in-picture requires Android 8.0 or newer.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.testTag("player_pip_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PictureInPictureAlt,
-                            contentDescription = "Start picture-in-picture"
-                        )
-                    }
-                    IconButton(
                         onClick = { isFullscreenExpanded = true },
                         modifier = Modifier.testTag("top_fullscreen_button")
                     ) {
@@ -290,11 +259,11 @@ fun PlayerScreen(
 
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = if (isFullscreenExpanded || pipMode) {
+                modifier = if (isFullscreenExpanded) {
                     Modifier
                         .fillMaxSize()
                         .background(Color.Black)
-                        .testTag(if (pipMode) "player_pip_mode" else "player_fullscreen_mode")
+                        .testTag("player_fullscreen_mode")
                 } else {
                     Modifier
                         .fillMaxWidth()

@@ -130,7 +130,7 @@ fun ChannelDetailScreen(
         }
     }
 
-    LaunchedEffect(shouldLoadMore, continuationToken, isLoadingMore, hasMoreVideos, allowLoadMore, loadMoreRetryKey) {
+    LaunchedEffect(shouldLoadMore, continuationToken, hasMoreVideos, allowLoadMore, loadMoreRetryKey) {
         if (shouldLoadMore && !isLoadingMore && hasMoreVideos && continuationToken != null && allowLoadMore) {
             isLoadingMore = true
             runCatching {

@@ -73,6 +73,13 @@ data class ChannelDetailState(
     val subscriberCount: String = ""
 )
 
+private data class ChannelPaginationSnapshot(
+    val nearEnd: Boolean,
+    val token: String?,
+    val canLoadMore: Boolean,
+    val loading: Boolean
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChannelDetailScreen(
@@ -143,11 +150,11 @@ fun ChannelDetailScreen(
             // Include loading state so the collector wakes up after a page finishes.
             // Otherwise a token update that arrives while loading can be skipped, leaving
             // the list stuck even when the viewport is still near the bottom.
-            listOf(
-                shouldLoadMore,
-                continuationToken,
-                hasMoreVideos && allowLoadMore,
-                isLoadingMore
+            ChannelPaginationSnapshot(
+                nearEnd = shouldLoadMore,
+                token = continuationToken,
+                canLoadMore = hasMoreVideos && allowLoadMore,
+                loading = isLoadingMore
             )
         }.distinctUntilChanged().collect { (nearEnd, token, canLoadMore, loading) ->
             if (nearEnd && canLoadMore && token != null && !loading) {

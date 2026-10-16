@@ -217,6 +217,9 @@ private fun YouTubeApp(
     }
 
     fun playVideo(video: YouTubeVideo) {
+        // Leaving the channel detail route is required because it has higher
+        // rendering priority than PlayerScreen in the main content branch.
+        selectedChannel = null
         history = WatchHistoryStore.record(
             context,
             video.videoId,

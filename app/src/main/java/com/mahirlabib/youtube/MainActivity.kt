@@ -74,6 +74,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -669,20 +671,19 @@ private fun InAppMiniPlayer(
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Live 16:9 embedded player thumbnail preview
-            Box(
+            // Keep the mini-player preview passive: creating a second WebView here
+            // starts a competing YouTube player and can interrupt the main player.
+            AsyncImage(
+                model = "https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg",
+                contentDescription = "Thumbnail for ${video.title}",
+                contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .width(96.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Black)
-            ) {
-                YouTubeEmbedPlayer(
-                    videoId = video.videoId,
-                    modifier = Modifier.fillMaxSize(),
-                    autoplay = true
-                )
-            }
+                    .testTag("mini_player_thumbnail")
+            )
 
             Spacer(Modifier.width(10.dp))
 

@@ -161,7 +161,8 @@ private fun YouTubeApp(
     val scope = rememberCoroutineScope()
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
-    var isPipEnabled by remember { mutableStateOf(PipSettingsStore.isPipEnabled(context)) }
+    var playbackMode by remember { mutableStateOf(PipSettingsStore.getPlaybackMode(context)) }
+    val isPipEnabled = playbackMode != PipSettingsStore.MODE_DISABLED
     var showPipSettingsDialog by remember { mutableStateOf(false) }
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -356,48 +357,51 @@ private fun YouTubeApp(
             return@MaterialTheme
         }
 
-        // PiP / Background Playback Settings Dialog
+        // Background playback mode settings.
         if (showPipSettingsDialog) {
             AlertDialog(
                 onDismissRequest = { showPipSettingsDialog = false },
-                title = { Text("Background Playback (PiP)") },
+                title = { Text("Background Playback") },
                 text = {
                     Column {
                         Text(
-                            text = "Keep playing video in a small floating window (Picture-in-Picture) when you leave or minimize the app.",
+                            text = "Choose what should happen when you leave the app. Audio-only playback may not continue because YouTube embedded playback does not guarantee background audio.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = if (isPipEnabled) "PiP Playback Enabled" else "PiP Playback Disabled",
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Switch(
-                                checked = isPipEnabled,
-                                onCheckedChange = { enabled ->
-                                    isPipEnabled = enabled
-                                    PipSettingsStore.setPipEnabled(context, enabled)
-                                    val msg = if (enabled) "Background PiP Playback enabled" else "Background PiP Playback disabled"
-                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        Spacer(Modifier.height(12.dp))
+                        listOf(
+                            PipSettingsStore.MODE_VIDEO to ("Floating Video" to "Continue in a small picture-in-picture window"),
+                            PipSettingsStore.MODE_AUDIO to ("Background Audio Only" to "Attempts audio-only background playback; not guaranteed"),
+                            PipSettingsStore.MODE_DISABLED to ("Disabled" to "Do not enter picture-in-picture automatically")
+                        ).forEach { (mode, details) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                    playbackMode = mode
+                                    PipSettingsStore.setPlaybackMode(context, mode)
+                                    Toast.makeText(context, details.first + " selected", Toast.LENGTH_SHORT).show()
+                                }.padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.RadioButton(
+                                    selected = playbackMode == mode,
+                                    onClick = {
+                                        playbackMode = mode
+                                        PipSettingsStore.setPlaybackMode(context, mode)
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
+                                    Text(details.first, fontWeight = FontWeight.SemiBold)
+                                    Text(details.second, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                            )
+                            }
                         }
                     }
                 },
-                confirmButton = {
-                    TextButton(onClick = { showPipSettingsDialog = false }) {
-                        Text("Done")
-                    }
-                }
+                confirmButton = { TextButton(onClick = { showPipSettingsDialog = false }) { Text("Done") } }
             )
         }
-
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {

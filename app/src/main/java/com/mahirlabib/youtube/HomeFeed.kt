@@ -81,6 +81,14 @@ fun HomeFeed(
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
     val feedListState = rememberLazyListState()
+
+    // Move to the refreshed feed only after the refresh indicator has finished.
+    // Waiting for isLoading=false avoids competing with PullToRefreshBox's gesture animation.
+    LaunchedEffect(refreshVersion, isLoading) {
+        if (refreshVersion > 0 && !isLoading) {
+            feedListState.animateScrollToItem(0)
+        }
+    }
     val nearFeedEnd by remember {
         derivedStateOf {
             val total = feedListState.layoutInfo.totalItemsCount

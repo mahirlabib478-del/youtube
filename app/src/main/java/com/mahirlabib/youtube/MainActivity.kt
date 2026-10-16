@@ -411,7 +411,12 @@ private fun YouTubeApp() {
                 }
 
                 activeVideo != null -> {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    // Keep the mini-player above Scaffold's bottom navigation bar.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(bottom = padding.calculateBottomPadding())
+                    ) {
                         if (isMiniPlayer) {
                             when (selectedTab) {
                                 0 -> HomeFeed(

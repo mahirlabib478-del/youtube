@@ -239,9 +239,9 @@ private fun YouTubeApp() {
                 feedHasMore = tokens.values.any { !it.isNullOrBlank() }
                 feedRefreshVersion++
                 feedErrorMessage = when {
-                    videos.isEmpty() && failedChannels > 0 -> "Couldn't refresh saved channels. Check your connection and scroll to retry."
+                    videos.isEmpty() && failedChannels > 0 -> "Couldn't refresh saved channels. Check your connection and pull down to retry."
                     videos.isEmpty() -> "No public videos found for the saved channels."
-                    failedChannels > 0 -> "Some channels couldn't refresh. Showing available videos; scroll to retry."
+                    failedChannels > 0 -> "Some channels couldn't refresh. Showing available videos; pull down to retry."
                     else -> null
                 }
             }.onFailure { err ->

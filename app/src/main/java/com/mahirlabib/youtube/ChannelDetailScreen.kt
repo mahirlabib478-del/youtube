@@ -89,6 +89,7 @@ fun ChannelDetailScreen(
         mutableStateOf(initial)
     }
     var isLoadingOnlineUploads by remember { mutableStateOf(false) }
+    var initialLoadRetryKey by remember(channel.channelId) { mutableIntStateOf(0) }
     var uploadsError by remember(channel.channelId) { mutableStateOf<String?>(null) }
     var continuationToken by remember(channel.channelId) { mutableStateOf<String?>(null) }
     var isLoadingMore by remember { mutableStateOf(false) }
@@ -97,7 +98,7 @@ fun ChannelDetailScreen(
     var loadMoreRetryKey by remember(channel.channelId) { mutableIntStateOf(0) }
 
     // Initial load: Fetch first rich page of videos + continuation token
-    LaunchedEffect(channel.channelId) {
+    LaunchedEffect(channel.channelId, initialLoadRetryKey) {
         if (channel.channelId.isNotBlank()) {
             isLoadingOnlineUploads = true
             uploadsError = null
@@ -305,6 +306,34 @@ fun ChannelDetailScreen(
                                 strokeWidth = 2.dp,
                                 color = MaterialTheme.colorScheme.primary
                             )
+                        }
+                    }
+                }
+            }
+
+            // Surface initial pagination/API errors even when cached videos exist,
+            // so a cached 50-video list cannot silently look like the end of the channel.
+            if (uploadsError != null && continuationToken == null && !isLoadingOnlineUploads) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = uploadsError ?: "Could not load channel uploads.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = {
+                                uploadsError = null
+                                initialLoadRetryKey++
+                            },
+                            modifier = Modifier.testTag("channel_initial_load_retry")
+                        ) {
+                            Text("Retry loading channel videos")
                         }
                     }
                 }

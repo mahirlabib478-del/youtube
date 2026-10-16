@@ -413,9 +413,10 @@ private fun YouTubeApp() {
                 activeVideo != null -> {
                     // Keep the mini-player above Scaffold's bottom navigation bar.
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = padding.calculateBottomPadding())
+                        // Keep the full Scaffold content bounds available to the feed.
+                        // Each screen applies Scaffold padding itself; shrinking this Box too
+                        // caused the bottom inset to be applied twice and left a blank strip.
+                        modifier = Modifier.fillMaxSize()
                     ) {
                         if (isMiniPlayer) {
                             when (selectedTab) {
@@ -471,7 +472,12 @@ private fun YouTubeApp() {
                                 openChannel(chId, chTitle, chAvatar)
                             },
                             miniMode = isMiniPlayer,
-                            modifier = if (isMiniPlayer) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp) else Modifier,
+                            modifier = if (isMiniPlayer) {
+                                Modifier.align(Alignment.BottomEnd).padding(
+                                    end = 8.dp,
+                                    bottom = padding.calculateBottomPadding() + 8.dp
+                                )
+                            } else Modifier,
                             onExpandMiniPlayer = { isMiniPlayer = false }
                         )
                     }

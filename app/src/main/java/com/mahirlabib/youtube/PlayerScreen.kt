@@ -269,17 +269,23 @@ fun PlayerScreen(
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                 }
             ) {
+                // Keep one embed composable at a stable composition position when
+                // switching between full player and mini-player. Branching into two
+                // YouTubeEmbedPlayer calls disposes the WebView and restarts playback.
+                YouTubeEmbedPlayer(
+                    videoId = videoId,
+                    modifier = Modifier.fillMaxSize(),
+                    autoplay = true,
+                    onShowCustomView = onShowCustomView,
+                    onHideCustomView = onHideCustomView
+                )
                 if (miniMode) {
+                    // Transparent tap target and close control sit above the same WebView.
                     Box(
-                        modifier = Modifier.fillMaxSize().clickable { onExpandMiniPlayer() }
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable { onExpandMiniPlayer() }
                     ) {
-                        YouTubeEmbedPlayer(
-                            videoId = videoId,
-                            modifier = Modifier.fillMaxSize(),
-                            autoplay = true,
-                            onShowCustomView = onShowCustomView,
-                            onHideCustomView = onHideCustomView
-                        )
                         IconButton(
                             onClick = onClose,
                             modifier = Modifier.align(Alignment.TopEnd).size(36.dp)
@@ -288,14 +294,6 @@ fun PlayerScreen(
                             Icon(Icons.Default.Refresh, contentDescription = "Close mini player", tint = Color.White)
                         }
                     }
-                } else {
-                    YouTubeEmbedPlayer(
-                        videoId = videoId,
-                        modifier = Modifier.fillMaxSize(),
-                        autoplay = true,
-                        onShowCustomView = onShowCustomView,
-                        onHideCustomView = onHideCustomView
-                    )
                 }
 
                 if (isFullscreenExpanded) {

@@ -107,7 +107,8 @@ fun PlayerScreen(
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> },
-    miniMode: Boolean = false
+    miniMode: Boolean = false,
+    pipMode: Boolean = false
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -217,14 +218,14 @@ fun PlayerScreen(
             Modifier
                 .fillMaxSize()
                 .then(
-                    if (isFullscreenExpanded) Modifier.background(Color.Black)
+                    if (isFullscreenExpanded || pipMode) Modifier.background(Color.Black)
                     else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
                 )
-                .testTag("player_screen")
+                .testTag(if (pipMode) "player_screen_pip_host" else "player_screen")
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (!isFullscreenExpanded) {
+            if (!isFullscreenExpanded && !pipMode) {
                 // Top Back Navigation bar
                 Row(
                     modifier = Modifier
@@ -261,11 +262,11 @@ fun PlayerScreen(
 
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = if (isFullscreenExpanded) {
+                modifier = if (isFullscreenExpanded || pipMode) {
                     Modifier
                         .fillMaxSize()
                         .background(Color.Black)
-                        .testTag("player_fullscreen_mode")
+                        .testTag(if (pipMode) "player_pip_mode" else "player_fullscreen_mode")
                 } else {
                     Modifier
                         .fillMaxWidth()
@@ -349,7 +350,7 @@ fun PlayerScreen(
                 }
             }
 
-            if (!isFullscreenExpanded) {
+            if (!isFullscreenExpanded && !pipMode) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -82,11 +82,12 @@ fun HomeFeed(
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
     val feedListState = rememberLazyListState()
 
-    // Move to the refreshed feed only after the refresh indicator has finished.
-    // Waiting for isLoading=false avoids competing with PullToRefreshBox's gesture animation.
+    // Reset the list position without a second scroll animation after refresh.
+    // PullToRefreshBox already animates the gesture/indicator; running another scroll
+    // animation here can make the refreshed feed feel like it is jumping or drifting.
     LaunchedEffect(refreshVersion, isLoading) {
         if (refreshVersion > 0 && !isLoading) {
-            feedListState.animateScrollToItem(0)
+            feedListState.scrollToItem(0)
         }
     }
     val nearFeedEnd by remember {

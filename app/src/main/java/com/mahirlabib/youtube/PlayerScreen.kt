@@ -116,6 +116,7 @@ fun PlayerScreen(
     val videoId = video.videoId
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
+    var isFullscreenControlsVisible by remember(videoId) { mutableStateOf(true) }
 
     // Remember the orientation the user was in before fullscreen so exiting returns
     // to that exact orientation instead of re-reading the device sensor (which can
@@ -123,6 +124,14 @@ fun PlayerScreen(
     val orientationBeforeFullscreen = remember(videoId, activity) {
         activity?.resources?.configuration?.orientation
             ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
+    }
+
+    // Show controls on fullscreen entry, then hide them to keep the video unobstructed.
+    // A WebView touch reveals them again; the timer restarts whenever visibility changes.
+    LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
+        if (!isFullscreenExpanded || !isFullscreenControlsVisible) return@LaunchedEffect
+        delay(3500)
+        isFullscreenControlsVisible = false
     }
 
     LaunchedEffect(isFullscreenExpanded) {
@@ -305,10 +314,11 @@ fun PlayerScreen(
                     autoplay = true,
                     onShowCustomView = onShowCustomView,
                     onHideCustomView = onHideCustomView,
-                    // Keep the fullscreen exit bar persistent: WebView taps are
-                    // consumed by YouTube's own controls, so they are not a reliable
-                    // way to reveal a Compose overlay.
-                    onPlayerTap = {}
+                    // Observe WebView taps without consuming them. Show the app exit bar
+                    // briefly, then auto-hide it so the video remains unobstructed.
+                    onPlayerTap = {
+                        if (isFullscreenExpanded) isFullscreenControlsVisible = true
+                    }
                 )
                 // YouTube's own fullscreen control is disabled (fs=0). Use the
                 // existing app toolbar entry point instead of adding another button
@@ -335,7 +345,7 @@ fun PlayerScreen(
                     // Keep the WebView interactive; fullscreen tap detection is handled
                     // by its touch listener and never by a Compose layer above the player.
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = true,
+                        visible = isFullscreenControlsVisible,
                         enter = fadeIn(animationSpec = tween(200)),
                         exit = fadeOut(animationSpec = tween(300)),
                         modifier = Modifier.align(Alignment.TopCenter)

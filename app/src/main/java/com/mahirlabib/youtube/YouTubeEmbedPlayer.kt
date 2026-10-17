@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.util.Log
 import android.view.View
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
@@ -55,7 +56,7 @@ private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
  * Direct YouTube Embedded Player with isolated video lifecycle.
  * - Wraps each video in key(videoId) so switching videos completely refreshes the player instance.
  * - Eliminates black-screen freeze by avoiding static pauseTimers() calls.
- * - Suppresses "Watch on YouTube" redirects, suggested video grids, and recommendation overlays.
+ * - Keeps playback embedded and covers YouTube's end-screen recommendations with an in-player replay surface when the IFrame API reports the video has ended.
  */
 @Composable
 fun YouTubeEmbedPlayer(
@@ -64,7 +65,8 @@ fun YouTubeEmbedPlayer(
     autoplay: Boolean = true,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onPlayerTap: (() -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
 
@@ -74,7 +76,8 @@ fun YouTubeEmbedPlayer(
         autoplay = autoplay,
         onPlaybackError = onPlaybackError,
         onShowCustomView = onShowCustomView,
-        onHideCustomView = onHideCustomView
+        onHideCustomView = onHideCustomView,
+        onPlayerTap = onPlayerTap
     )
 }
 
@@ -86,7 +89,8 @@ private fun YouTubeEmbedPlayerInstance(
     autoplay: Boolean = true,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onPlayerTap: (() -> Unit)? = null
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -132,6 +136,12 @@ private fun YouTubeEmbedPlayerInstance(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     setBackgroundColor(AndroidColor.BLACK)
+                    // Observe taps without consuming them, so YouTube's own controls,
+                    // seeking, settings, captions and playback still receive touch events.
+                    setOnTouchListener { _, event ->
+                        if (event.action == MotionEvent.ACTION_UP) onPlayerTap?.invoke()
+                        false
+                    }
 
                     settings.apply {
                         javaScriptEnabled = true
@@ -299,12 +309,9 @@ private fun YouTubeEmbedPlayerInstance(
 }
 
 /**
- * Loads the HTML5 YouTube embedded player using privacy-enhanced domain and strict cross-origin referrer.
- * Suppresses:
- * 1. "Watch on YouTube" button (.ytp-youtube-button).
- * 2. End-screen suggestion grid (resets to 0 and pauses on completion).
- * 3. Pause overlay recommendations (.ytp-pause-overlay).
- * 4. Annotation teasers and promotional watermarks.
+ * Loads the HTML5 YouTube embedded player using the privacy-enhanced domain and strict referrer policy.
+ * The official IFrame API is used to detect playback completion and cover YouTube-owned end-screen
+ * recommendations with an in-player replay surface; other player UI remains controlled by YouTube.
  */
 private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
     val autoPlayParam = if (autoplay) 1 else 0
@@ -345,83 +352,77 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     height: 100%;
                     border: 0;
                 }
+                #end-cover {
+                    display: none;
+                    position: absolute;
+                    inset: 0;
+                    z-index: 10;
+                    align-items: center;
+                    justify-content: center;
+                    background: #000;
+                }
+                #end-cover.visible {
+                    display: flex;
+                }
+                #replay-button {
+                    border: 0;
+                    border-radius: 24px;
+                    padding: 12px 22px;
+                    background: #fff;
+                    color: #111;
+                    font: 600 16px sans-serif;
+                }
             </style>
         </head>
         <body>
             <div id="player-container">
                 <iframe
                     id="yt-embed"
-                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=0&enablejsapi=1&origin=https://www.youtube-nocookie.com"
+                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
                     referrerpolicy="strict-origin-when-cross-origin"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share">
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                    allowfullscreen>
                 </iframe>
+                <div id="end-cover" aria-label="Video ended">
+                    <button id="replay-button" type="button">Replay video</button>
+                </div>
             </div>
 
             <script>
-                var iframe = document.getElementById('yt-embed');
+                var player = null;
+                var endCover = document.getElementById('end-cover');
+                var replayButton = document.getElementById('replay-button');
 
-                // Suppress end-screen suggestions grid and pause overlays
-                window.addEventListener('message', function(event) {
-                    try {
-                        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                        if (data && data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
-                            if (iframe && iframe.contentWindow) {
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'seekTo',
-                                    args: [0, true]
-                                }), '*');
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'pauseVideo',
-                                    args: []
-                                }), '*');
+                // Use the official IFrame Player API event callbacks. CSS injection into
+                // the cross-origin YouTube iframe is not permitted by the browser.
+                function onYouTubeIframeAPIReady() {
+                    player = new YT.Player('yt-embed', {
+                        events: {
+                            onStateChange: function(event) {
+                                if (event.data === YT.PlayerState.ENDED) {
+                                    // YouTube owns the end-screen UI; cover it with a
+                                    // native-looking replay surface instead of trying to
+                                    // style elements inside the cross-origin iframe.
+                                    endCover.classList.add('visible');
+                                } else if (event.data === YT.PlayerState.PLAYING) {
+                                    endCover.classList.remove('visible');
+                                }
                             }
                         }
-                    } catch(e) {}
-                });
-
-                // Periodic check to inject CSS rules to eliminate "Watch on YouTube" and overlays
-                function injectAntiDistractionStyle() {
-                    try {
-                        var doc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (doc && !doc.getElementById('clean-player-style')) {
-                            var style = doc.createElement('style');
-                            style.id = 'clean-player-style';
-                            style.innerHTML = `
-                                .ytp-youtube-button,
-                                a.ytp-youtube-button,
-                                .ytp-impression-link,
-                                .ytp-title-link,
-                                .ytp-watermark,
-                                .ytp-pause-overlay,
-                                .ytp-pause-overlay-container,
-                                .ytp-scroll-min,
-                                .ytp-endscreen-paginate,
-                                .ytp-ce-element,
-                                .ytp-ce-video,
-                                .ytp-ce-channel,
-                                .ytp-ce-playlist,
-                                .ytp-cards-teaser,
-                                .ytp-cards-button,
-                                .ytp-suggestion-set,
-                                .ytp-show-tiles,
-                                .ytp-related-on-error-overlay {
-                                    display: none !important;
-                                    visibility: hidden !important;
-                                    opacity: 0 !important;
-                                    pointer-events: none !important;
-                                }
-                            `;
-                            doc.head.appendChild(style);
-                        }
-                    } catch(e) {}
+                    });
                 }
 
-                iframe.onload = function() {
-                    injectAntiDistractionStyle();
-                    setInterval(injectAntiDistractionStyle, 800);
-                };
+                replayButton.addEventListener('click', function() {
+                    if (!player) return;
+                    endCover.classList.remove('visible');
+                    player.seekTo(0, true);
+                    player.playVideo();
+                });
+
+                var apiScript = document.createElement('script');
+                apiScript.src = 'https://www.youtube.com/iframe_api';
+                var firstScript = document.getElementsByTagName('script')[0];
+                firstScript.parentNode.insertBefore(apiScript, firstScript);
             </script>
         </body>
         </html>

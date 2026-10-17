@@ -419,9 +419,41 @@ private fun YouTubeApp() {
             ) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                        customFullscreenView ?: View(it)
+                    // Host the WebChromeClient fullscreen view inside a fresh MATCH_PARENT
+                    // container. The supplied view can carry the embedded player's old
+                    // dimensions; reusing those layout params makes landscape playback
+                    // collapse into a thin strip after the device rotates.
+                    factory = { context ->
+                        android.widget.FrameLayout(context).apply {
+                            setBackgroundColor(android.graphics.Color.BLACK)
+                            clipChildren = true
+                            clipToPadding = true
+                        }
+                    },
+                    update = { host ->
+                        val fullscreenView = customFullscreenView
+                        if (fullscreenView != null && fullscreenView.parent !== host) {
+                            (fullscreenView.parent as? ViewGroup)?.removeView(fullscreenView)
+                            host.removeAllViews()
+                            host.addView(
+                                fullscreenView,
+                                android.widget.FrameLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                            )
+                        } else if (fullscreenView != null) {
+                            val params = fullscreenView.layoutParams
+                            if (params.width != ViewGroup.LayoutParams.MATCH_PARENT ||
+                                params.height != ViewGroup.LayoutParams.MATCH_PARENT
+                            ) {
+                                fullscreenView.layoutParams =
+                                    android.widget.FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                            }
+                        }
                     }
                 )
 
@@ -646,8 +678,11 @@ private fun YouTubeApp() {
                                 customFullscreenView = view
                                 customViewCallback = callback
                             },
+                            // WebChromeClient calls this after the browser has already
+                            // requested fullscreen exit. Clear our overlay state here, but do
+                            // not call onCustomViewHidden() again (that would re-enter the
+                            // WebChromeClient callback and can leave the player black).
                             onHideCustomView = {
-                                customViewCallback?.onCustomViewHidden()
                                 customFullscreenView = null
                                 customViewCallback = null
                             },

@@ -116,15 +116,7 @@ fun PlayerScreen(
     val videoId = video.videoId
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
-    var isFullscreenControlsVisible by remember(videoId, isFullscreenExpanded) { mutableStateOf(true) }
-
-    // Auto-hide fullscreen controls after 3.5 seconds
-    LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
-        if (isFullscreenExpanded && isFullscreenControlsVisible) {
-            delay(3500)
-            isFullscreenControlsVisible = false
-        }
-    }
+    var isFullscreenControlsVisible by remember(videoId) { mutableStateOf(true) }
 
     // Remember the orientation the user was in before fullscreen so exiting returns
     // to that exact orientation instead of re-reading the device sensor (which can
@@ -132,6 +124,14 @@ fun PlayerScreen(
     val orientationBeforeFullscreen = remember(videoId, activity) {
         activity?.resources?.configuration?.orientation
             ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
+    }
+
+    // Show controls on fullscreen entry, then hide them to keep the video unobstructed.
+    // A WebView touch reveals them again; the timer restarts whenever visibility changes.
+    LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
+        if (!isFullscreenExpanded || !isFullscreenControlsVisible) return@LaunchedEffect
+        delay(3500)
+        isFullscreenControlsVisible = false
     }
 
     LaunchedEffect(isFullscreenExpanded) {
@@ -142,7 +142,6 @@ fun PlayerScreen(
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            isFullscreenControlsVisible = true
         } else {
             activity.requestedOrientation = when (orientationBeforeFullscreen) {
                 android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
@@ -314,8 +313,16 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     autoplay = true,
                     onShowCustomView = onShowCustomView,
-                    onHideCustomView = onHideCustomView
+                    onHideCustomView = onHideCustomView,
+                    // Observe WebView taps without consuming them. Show the app exit bar
+                    // briefly, then auto-hide it so the video remains unobstructed.
+                    onPlayerTap = {
+                        if (isFullscreenExpanded) isFullscreenControlsVisible = true
+                    }
                 )
+                // YouTube's own fullscreen control is disabled (fs=0). Use the
+                // existing app toolbar entry point instead of adding another button
+                // over the video.
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
                     Box(
@@ -335,18 +342,8 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded) {
-                    // Tap detector overlay to toggle controls visibility
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                isFullscreenControlsVisible = !isFullscreenControlsVisible
-                            }
-                    )
-
+                    // Keep the WebView interactive; fullscreen tap detection is handled
+                    // by its touch listener and never by a Compose layer above the player.
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isFullscreenControlsVisible,
                         enter = fadeIn(animationSpec = tween(200)),

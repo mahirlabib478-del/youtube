@@ -118,7 +118,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun YouTubeApp() {
     val context = LocalContext.current
-    AppUpdatePrompt()
     val scope = rememberCoroutineScope()
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }
@@ -406,6 +405,7 @@ private fun YouTubeApp() {
     )
 
     MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
+        AppUpdatePrompt()
         // Keep the existing PlayerScreen/WebView composed during Android PiP.
         // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.
 

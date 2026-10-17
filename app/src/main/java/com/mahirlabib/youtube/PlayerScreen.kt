@@ -119,15 +119,6 @@ fun PlayerScreen(
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
 
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    LaunchedEffect(configuration.orientation) {
-        if (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
-            if (!isFullscreenExpanded) {
-                isFullscreenExpanded = true
-            }
-        }
-    }
-
     LaunchedEffect(isFullscreenExpanded) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
@@ -140,11 +131,10 @@ fun PlayerScreen(
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        // Seamlessly and aggressively resume playback throughout rotation/resize transition
-        repeat(5) {
-            delay(150)
-            resumeTrigger++
-        }
+        delay(250)
+        resumeTrigger++
+        delay(400)
+        resumeTrigger++
     }
 
     DisposableEffect(activity, videoId) {

@@ -387,28 +387,26 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
             <script>
                 var iframe = document.getElementById('yt-embed');
-                var wasPlaying = true;
-                var userExplicitlyPaused = false;
+                var wasPlaying = false;
 
-                function sendPostMessage(payload) {
+                function resumePlayback() {
                     try {
                         if (iframe && iframe.contentWindow) {
-                            iframe.contentWindow.postMessage(JSON.stringify(payload), '*');
+                            iframe.contentWindow.postMessage(JSON.stringify({
+                                event: 'command',
+                                func: 'playVideo',
+                                args: []
+                            }), '*');
+                            iframe.contentWindow.postMessage(JSON.stringify({
+                                event: 'command',
+                                func: 'playVideo',
+                                args: ''
+                            }), '*');
                         }
                     } catch(e) {}
                 }
 
-                function resumePlayback() {
-                    if (userExplicitlyPaused) return;
-                    sendPostMessage({ event: 'command', func: 'playVideo', args: [] });
-                    sendPostMessage({ event: 'command', func: 'playVideo', args: '' });
-                }
-
                 window.resumePlayback = resumePlayback;
-
-                function handshake() {
-                    sendPostMessage({ event: 'listening', id: 1, channel: 'clean-player' });
-                }
 
                 // Listen for YouTube player state changes
                 window.addEventListener('message', function(event) {
@@ -416,14 +414,22 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                         if (data && data.event === 'infoDelivery' && data.info) {
                             var state = data.info.playerState;
-                            if (state === 1) { // Playing
+                            if (state === 1) {
                                 wasPlaying = true;
-                                userExplicitlyPaused = false;
-                            } else if (state === 0) { // Ended
+                            } else if (state === 0) {
                                 wasPlaying = false;
-                                userExplicitlyPaused = true;
-                                sendPostMessage({ event: 'command', func: 'seekTo', args: [0, true] });
-                                sendPostMessage({ event: 'command', func: 'pauseVideo', args: [] });
+                                if (iframe && iframe.contentWindow) {
+                                    iframe.contentWindow.postMessage(JSON.stringify({
+                                        event: 'command',
+                                        func: 'seekTo',
+                                        args: [0, true]
+                                    }), '*');
+                                    iframe.contentWindow.postMessage(JSON.stringify({
+                                        event: 'command',
+                                        func: 'pauseVideo',
+                                        args: []
+                                    }), '*');
+                                }
                             }
                         }
                     } catch(e) {}
@@ -431,24 +437,19 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
                 // Auto-resume playback if orientation change or layout resize paused the video
                 var resizeTimer = null;
-                function onViewportChanged() {
-                    if (!userExplicitlyPaused) {
-                        clearTimeout(resizeTimer);
-                        resumePlayback();
-                        resizeTimer = setTimeout(resumePlayback, 100);
-                        setTimeout(resumePlayback, 250);
-                        setTimeout(resumePlayback, 500);
-                        setTimeout(resumePlayback, 800);
-                        setTimeout(resumePlayback, 1200);
-                    }
-                }
+                window.addEventListener('resize', function() {
+                    clearTimeout(resizeTimer);
+                    resizeTimer = setTimeout(resumePlayback, 200);
+                    setTimeout(resumePlayback, 500);
+                });
 
-                window.addEventListener('resize', onViewportChanged);
-                window.addEventListener('orientationchange', onViewportChanged);
-                window.addEventListener('focus', onViewportChanged);
+                window.addEventListener('focus', function() {
+                    setTimeout(resumePlayback, 200);
+                });
+
                 document.addEventListener('visibilitychange', function() {
                     if (!document.hidden) {
-                        onViewportChanged();
+                        setTimeout(resumePlayback, 200);
                     }
                 });
 
@@ -492,13 +493,6 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                 iframe.onload = function() {
                     injectAntiDistractionStyle();
                     setInterval(injectAntiDistractionStyle, 800);
-                    handshake();
-                    setTimeout(handshake, 300);
-                    setTimeout(handshake, 1000);
-                    if ($autoPlayParam === 1) {
-                        setTimeout(resumePlayback, 200);
-                        setTimeout(resumePlayback, 600);
-                    }
                 };
             </script>
         </body>

@@ -47,7 +47,7 @@ internal fun sortVideosNewestFirst(videos: List<YouTubeVideo>): List<YouTubeVide
  * first-page candidates so manual refresh is visibly useful. If new uploads
  * exist, keep that channel newest-first so newly published videos stay on top.
  */
-private fun interleaveChannelQueuesPreservingOrder(videos: List<YouTubeVideo>): List<YouTubeVideo> {
+internal fun interleaveChannelQueuesPreservingOrder(videos: List<YouTubeVideo>): List<YouTubeVideo> {
     val perChannel = videos.distinctBy { it.videoId }
         .groupBy { video ->
             video.channelId.ifBlank { video.channelTitle.ifBlank { video.videoId } }

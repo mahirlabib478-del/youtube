@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -124,6 +125,9 @@ private fun YouTubeApp() {
     var lastHomeTapTime by remember { mutableLongStateOf(0L) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var isMiniPlayer by remember { mutableStateOf(false) }
+    // Hoist feed scroll position above the player/feed branch so closing the mini player
+    // does not recreate HomeFeed at the top of the list.
+    val homeFeedListState = rememberLazyListState()
     var selectedChannel by remember { mutableStateOf<ChannelDetailState?>(null) }
 
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
@@ -592,6 +596,7 @@ private fun YouTubeApp() {
                                     onPlayVideo = { playVideo(it) }, onRefresh = { refreshFeed() },
                                     onLoadMore = { loadMoreFeed() }, isLoadingMore = isFeedLoadingMore,
                                     refreshVersion = feedRefreshVersion,
+                                    feedListState = homeFeedListState,
                                     onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
                                 )
                                 1 -> ChannelManagerScreen(
@@ -697,6 +702,7 @@ private fun YouTubeApp() {
                         onLoadMore = { loadMoreFeed() },
                         isLoadingMore = isFeedLoadingMore,
                         refreshVersion = feedRefreshVersion,
+                                    feedListState = homeFeedListState,
                         onOpenChannel = { chId, chTitle, chAvatar ->
                             openChannel(chId, chTitle, chAvatar)
                         }

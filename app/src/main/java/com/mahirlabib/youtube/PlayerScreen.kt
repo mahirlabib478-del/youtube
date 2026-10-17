@@ -321,6 +321,26 @@ fun PlayerScreen(
                         }
                     }
                 )
+                // Use the same Compose fullscreen state as the toolbar button.
+                // The embedded YouTube fullscreen control is disabled below (fs=0),
+                // so it cannot open a separate WebChromeClient custom-view fullscreen flow.
+                if (!isFullscreenExpanded && !miniMode) {
+                    IconButton(
+                        onClick = { isFullscreenExpanded = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp)
+                            .size(48.dp)
+                            .background(Color(0xCC000000), CircleShape)
+                            .testTag("player_fullscreen_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen",
+                            tint = Color.White
+                        )
+                    }
+                }
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
                     Box(

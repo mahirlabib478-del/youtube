@@ -106,6 +106,7 @@ fun PlayerScreen(
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> },
+    onSubscriptionChanged: (video: YouTubeVideo, subscribed: Boolean) -> Unit = { _, _ -> },
     miniMode: Boolean = false,
     modifier: Modifier = Modifier,
     onExpandMiniPlayer: () -> Unit = {}
@@ -186,7 +187,21 @@ fun PlayerScreen(
     var isLiked by remember(videoId) { mutableStateOf(WatchHistoryStore.isLiked(context, videoId)) }
     var isDisliked by remember(videoId) { mutableStateOf(false) }
     var isSaved by remember(videoId) { mutableStateOf(WatchHistoryStore.isInWatchlist(context, videoId)) }
-    var isSubscribed by remember(video.channelTitle) { mutableStateOf(false) }
+    var isSubscribed by remember(video.channelId, video.channelTitle) {
+        mutableStateOf(
+            ApprovedChannelStore.load(context).any { channel ->
+                (video.channelId.isNotBlank() && channel.channelId == video.channelId) ||
+                    channel.title.equals(video.channelTitle, ignoreCase = true)
+            }
+        )
+    }
+
+    LaunchedEffect(video.channelId, video.channelTitle) {
+        isSubscribed = ApprovedChannelStore.load(context).any { channel ->
+            (video.channelId.isNotBlank() && channel.channelId == video.channelId) ||
+                channel.title.equals(video.channelTitle, ignoreCase = true)
+        }
+    }
 
     fun loadInitialComments() {
         commentsLoading = true
@@ -460,7 +475,11 @@ fun PlayerScreen(
                             }
 
                             Button(
-                                onClick = { isSubscribed = !isSubscribed },
+                                onClick = {
+                    val nextSubscribed = !isSubscribed
+                    isSubscribed = nextSubscribed
+                    onSubscriptionChanged(video, nextSubscribed)
+                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isSubscribed) MaterialTheme.colorScheme.surfaceVariant else Color(0xFF0F0F0F),
                                     contentColor = if (isSubscribed) MaterialTheme.colorScheme.onSurfaceVariant else Color.White

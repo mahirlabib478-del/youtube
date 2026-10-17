@@ -17,8 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.rememberScrollState
@@ -77,10 +77,10 @@ fun HomeFeed(
     onLoadMore: () -> Unit = {},
     isLoadingMore: Boolean = false,
     refreshVersion: Int = 0,
+    feedListState: LazyListState,
     onOpenChannel: (channelId: String, channelTitle: String, channelAvatarUrl: String) -> Unit = { _, _, _ -> }
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
-    val feedListState = rememberLazyListState()
 
     // Reset the list position without a second scroll animation after refresh.
     // PullToRefreshBox already animates the gesture/indicator; running another scroll

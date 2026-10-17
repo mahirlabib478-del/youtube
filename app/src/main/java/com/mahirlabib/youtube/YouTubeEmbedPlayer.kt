@@ -309,12 +309,9 @@ private fun YouTubeEmbedPlayerInstance(
 }
 
 /**
- * Loads the HTML5 YouTube embedded player using privacy-enhanced domain and strict cross-origin referrer.
- * Suppresses:
- * 1. "Watch on YouTube" button (.ytp-youtube-button).
- * 2. End-screen suggestion grid (resets to 0 and pauses on completion).
- * 3. Pause overlay recommendations (.ytp-pause-overlay).
- * 4. Annotation teasers and promotional watermarks.
+ * Loads the HTML5 YouTube embedded player using the privacy-enhanced domain and strict referrer policy.
+ * The official IFrame API is used to detect playback completion and cover YouTube-owned end-screen
+ * recommendations with an in-player replay surface; other player UI remains controlled by YouTube.
  */
 private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
     val autoPlayParam = if (autoplay) 1 else 0
@@ -385,10 +382,9 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     referrerpolicy="strict-origin-when-cross-origin"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share">
                 </iframe>
-            </div>
-
-            <div id="end-cover" aria-label="Video ended">
-                <button id="replay-button" type="button">Replay video</button>
+                <div id="end-cover" aria-label="Video ended">
+                    <button id="replay-button" type="button">Replay video</button>
+                </div>
             </div>
 
             <script>

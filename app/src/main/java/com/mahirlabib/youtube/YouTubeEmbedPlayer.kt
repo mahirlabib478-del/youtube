@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
 import android.util.Log
 import android.view.View
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
@@ -64,7 +65,8 @@ fun YouTubeEmbedPlayer(
     autoplay: Boolean = true,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onPlayerTap: (() -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
 
@@ -74,7 +76,8 @@ fun YouTubeEmbedPlayer(
         autoplay = autoplay,
         onPlaybackError = onPlaybackError,
         onShowCustomView = onShowCustomView,
-        onHideCustomView = onHideCustomView
+        onHideCustomView = onHideCustomView,
+        onPlayerTap = onPlayerTap
     )
 }
 
@@ -86,7 +89,8 @@ private fun YouTubeEmbedPlayerInstance(
     autoplay: Boolean = true,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onPlayerTap: (() -> Unit)? = null
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -132,6 +136,12 @@ private fun YouTubeEmbedPlayerInstance(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     setBackgroundColor(AndroidColor.BLACK)
+                    // Observe taps without consuming them, so YouTube's own controls,
+                    // seeking, settings, captions and playback still receive touch events.
+                    setOnTouchListener { _, event ->
+                        if (event.action == MotionEvent.ACTION_UP) onPlayerTap?.invoke()
+                        false
+                    }
 
                     settings.apply {
                         javaScriptEnabled = true
@@ -351,7 +361,7 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
             <div id="player-container">
                 <iframe
                     id="yt-embed"
-                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=0&enablejsapi=1&origin=https://www.youtube-nocookie.com"
+                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
                     referrerpolicy="strict-origin-when-cross-origin"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share">
                 </iframe>
@@ -381,47 +391,18 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     } catch(e) {}
                 });
 
-                // Periodic check to inject CSS rules to eliminate "Watch on YouTube" and overlays
-                function injectAntiDistractionStyle() {
+                // YouTube's embed iframe is cross-origin. The parent page cannot
+                // inject CSS into its document; rely only on supported embed parameters
+                // and the IFrame API message channel. YouTube may still show related videos
+                // at the end; rel=0 limits these to the same channel, not zero suggestions.
+                iframe.addEventListener('load', function() {
                     try {
-                        var doc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (doc && !doc.getElementById('clean-player-style')) {
-                            var style = doc.createElement('style');
-                            style.id = 'clean-player-style';
-                            style.innerHTML = `
-                                .ytp-youtube-button,
-                                a.ytp-youtube-button,
-                                .ytp-impression-link,
-                                .ytp-title-link,
-                                .ytp-watermark,
-                                .ytp-pause-overlay,
-                                .ytp-pause-overlay-container,
-                                .ytp-scroll-min,
-                                .ytp-endscreen-paginate,
-                                .ytp-ce-element,
-                                .ytp-ce-video,
-                                .ytp-ce-channel,
-                                .ytp-ce-playlist,
-                                .ytp-cards-teaser,
-                                .ytp-cards-button,
-                                .ytp-suggestion-set,
-                                .ytp-show-tiles,
-                                .ytp-related-on-error-overlay {
-                                    display: none !important;
-                                    visibility: hidden !important;
-                                    opacity: 0 !important;
-                                    pointer-events: none !important;
-                                }
-                            `;
-                            doc.head.appendChild(style);
-                        }
-                    } catch(e) {}
-                }
-
-                iframe.onload = function() {
-                    injectAntiDistractionStyle();
-                    setInterval(injectAntiDistractionStyle, 800);
-                };
+                        iframe.contentWindow.postMessage(JSON.stringify({
+                            event: 'listening',
+                            id: 1
+                        }), '*');
+                    } catch (e) {}
+                });
             </script>
         </body>
         </html>

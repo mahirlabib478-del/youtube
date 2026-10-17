@@ -204,9 +204,8 @@ private fun YouTubeApp() {
         previousChannelId: String = "",
         reshuffle: Boolean = false
     ): List<YouTubeVideo> {
-        // A Subscriptions feed should reflect upload time, not a random shuffle or
-        // round-robin order. Keep this helper for existing call sites, but merge globally.
-        return sortVideosNewestFirst(pages.flatten())
+        // Balance the first screen across channels while keeping each channel newest-first.
+        return balanceVideosAcrossChannels(pages.flatten())
     }
 
     fun refreshFeed() {
@@ -233,7 +232,7 @@ private fun YouTubeApp() {
                     val freshVideos = successfulPages.flatMap { it.videos }
                     // Preserve cached items only for channels that failed this refresh.
                     val cachedFailedChannelVideos = approvedVideos.filter { it.channelId in failedIds }
-                    val merged = sortVideosNewestFirst(freshVideos + cachedFailedChannelVideos)
+                    val merged = balanceVideosAcrossChannels(freshVideos + cachedFailedChannelVideos)
                     if (merged.isNotEmpty() || failedIds.isEmpty()) {
                         approvedVideos = merged
                         LocalVideoStore.save(context, merged)
@@ -294,7 +293,7 @@ private fun YouTubeApp() {
                 // cached entries with the current first page. Other channels are appended.
                 val retriedIds = successfulIds.intersect(feedFailedChannelIds)
                 val retainedVideos = approvedVideos.filterNot { it.channelId in retriedIds }
-                val merged = sortVideosNewestFirst(retainedVideos + successes.flatMap { it.second.videos })
+                val merged = balanceVideosAcrossChannels(retainedVideos + successes.flatMap { it.second.videos })
                 approvedVideos = merged
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = channels.associate { channel ->

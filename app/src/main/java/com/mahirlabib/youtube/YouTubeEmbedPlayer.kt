@@ -56,7 +56,7 @@ private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
  * Direct YouTube Embedded Player with isolated video lifecycle.
  * - Wraps each video in key(videoId) so switching videos completely refreshes the player instance.
  * - Eliminates black-screen freeze by avoiding static pauseTimers() calls.
- * - Suppresses "Watch on YouTube" redirects, suggested video grids, and recommendation overlays.
+ * - Keeps playback embedded and covers YouTube's end-screen recommendations with an in-player replay surface when the IFrame API reports the video has ended.
  */
 @Composable
 fun YouTubeEmbedPlayer(
@@ -355,6 +355,26 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     height: 100%;
                     border: 0;
                 }
+                #end-cover {
+                    display: none;
+                    position: absolute;
+                    inset: 0;
+                    z-index: 10;
+                    align-items: center;
+                    justify-content: center;
+                    background: #000;
+                }
+                #end-cover.visible {
+                    display: flex;
+                }
+                #replay-button {
+                    border: 0;
+                    border-radius: 24px;
+                    padding: 12px 22px;
+                    background: #fff;
+                    color: #111;
+                    font: 600 16px sans-serif;
+                }
             </style>
         </head>
         <body>
@@ -367,42 +387,45 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                 </iframe>
             </div>
 
-            <script>
-                var iframe = document.getElementById('yt-embed');
+            <div id="end-cover" aria-label="Video ended">
+                <button id="replay-button" type="button">Replay video</button>
+            </div>
 
-                // Suppress end-screen suggestions grid and pause overlays
-                window.addEventListener('message', function(event) {
-                    try {
-                        var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                        if (data && data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
-                            if (iframe && iframe.contentWindow) {
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'seekTo',
-                                    args: [0, true]
-                                }), '*');
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'pauseVideo',
-                                    args: []
-                                }), '*');
+            <script>
+                var player = null;
+                var endCover = document.getElementById('end-cover');
+                var replayButton = document.getElementById('replay-button');
+
+                // Use the official IFrame Player API event callbacks. CSS injection into
+                // the cross-origin YouTube iframe is not permitted by the browser.
+                function onYouTubeIframeAPIReady() {
+                    player = new YT.Player('yt-embed', {
+                        events: {
+                            onStateChange: function(event) {
+                                if (event.data === YT.PlayerState.ENDED) {
+                                    // YouTube owns the end-screen UI; cover it with a
+                                    // native-looking replay surface instead of trying to
+                                    // style elements inside the cross-origin iframe.
+                                    endCover.classList.add('visible');
+                                } else if (event.data === YT.PlayerState.PLAYING) {
+                                    endCover.classList.remove('visible');
+                                }
                             }
                         }
-                    } catch(e) {}
+                    });
+                }
+
+                replayButton.addEventListener('click', function() {
+                    if (!player) return;
+                    endCover.classList.remove('visible');
+                    player.seekTo(0, true);
+                    player.playVideo();
                 });
 
-                // YouTube's embed iframe is cross-origin. The parent page cannot
-                // inject CSS into its document; rely only on supported embed parameters
-                // and the IFrame API message channel. YouTube may still show related videos
-                // at the end; rel=0 limits these to the same channel, not zero suggestions.
-                iframe.addEventListener('load', function() {
-                    try {
-                        iframe.contentWindow.postMessage(JSON.stringify({
-                            event: 'listening',
-                            id: 1
-                        }), '*');
-                    } catch (e) {}
-                });
+                var apiScript = document.createElement('script');
+                apiScript.src = 'https://www.youtube.com/iframe_api';
+                var firstScript = document.getElementsByTagName('script')[0];
+                firstScript.parentNode.insertBefore(apiScript, firstScript);
             </script>
         </body>
         </html>

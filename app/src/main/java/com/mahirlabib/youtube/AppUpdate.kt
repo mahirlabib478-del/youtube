@@ -45,7 +45,7 @@ private object AppUpdateManager {
     private const val RELEASE_API =
         "https://api.github.com/repos/mahirlabib478-del/youtube/releases/latest"
 
-    suspend fun checkForUpdate(): AvailableAppUpdate? = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdate(context: Context? = null): AvailableAppUpdate? = withContext(Dispatchers.IO) {
         val connection = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 8000
@@ -60,7 +60,7 @@ private object AppUpdateManager {
             if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)) {
                 return@withContext null
             }
-            val remoteVersion = release.optString("tag_name").removePrefix("v").trim()
+            val remoteVersion = release.optString("tag_name").trim()
             val assets = release.optJSONArray("assets") ?: return@withContext null
             var apkUrl: String? = null
             for (index in 0 until assets.length()) {
@@ -70,22 +70,43 @@ private object AppUpdateManager {
                     if (apkUrl != null) break
                 }
             }
-            if (apkUrl.isNullOrBlank() || compareVersions(remoteVersion, BuildConfig.VERSION_NAME) <= 0) {
+            val installedVersion = context?.let { ctx ->
+                try {
+                    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
+                } catch (e: Exception) {
+                    null
+                }
+            } ?: BuildConfig.VERSION_NAME
+
+            val isNewer = compareVersions(remoteVersion, installedVersion) > 0
+            if (apkUrl.isNullOrBlank() || !isNewer) {
                 null
             } else {
-                AvailableAppUpdate(remoteVersion, apkUrl)
+                AvailableAppUpdate(remoteVersion.removePrefix("v").removePrefix("V"), apkUrl)
             }
         } finally {
             connection.disconnect()
         }
     }
 
+    private fun parseVersion(version: String): List<Int> {
+        val cleaned = version.trim()
+            .removePrefix("v")
+            .removePrefix("V")
+            .removePrefix("release-")
+            .removePrefix("Release-")
+        return cleaned.split(Regex("[^0-9]+"))
+            .filter { it.isNotBlank() }
+            .map { it.toIntOrNull() ?: 0 }
+    }
+
     private fun compareVersions(first: String, second: String): Int {
-        val a = first.split('.').map { it.toIntOrNull() ?: 0 }
-        val b = second.split('.').map { it.toIntOrNull() ?: 0 }
+        val a = parseVersion(first)
+        val b = parseVersion(second)
         for (index in 0 until maxOf(a.size, b.size)) {
-            val comparison = (a.getOrElse(index) { 0 }).compareTo(b.getOrElse(index) { 0 })
-            if (comparison != 0) return comparison
+            val partA = a.getOrElse(index) { 0 }
+            val partB = b.getOrElse(index) { 0 }
+            if (partA != partB) return partA.compareTo(partB)
         }
         return 0
     }
@@ -177,7 +198,7 @@ internal fun AppUpdatePrompt() {
     // Re-check each time the app process starts. Dismissing the dialog does not suppress it
     // on the next launch, so users keep seeing the download option until they update.
     LaunchedEffect(Unit) {
-        update = runCatching { AppUpdateManager.checkForUpdate() }.getOrNull()
+        update = runCatching { AppUpdateManager.checkForUpdate(context) }.getOrNull()
         showDialog = update != null
     }
 

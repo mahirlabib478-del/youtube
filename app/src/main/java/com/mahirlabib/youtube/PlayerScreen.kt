@@ -12,7 +12,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -305,7 +304,7 @@ fun PlayerScreen(
                         .background(Color.Black)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-                }).animateContentSize(animationSpec = tween(durationMillis = 260))
+                })
             ) {
                 // Keep one embed composable at a stable composition position when
                 // switching between full player and mini-player. Branching into two

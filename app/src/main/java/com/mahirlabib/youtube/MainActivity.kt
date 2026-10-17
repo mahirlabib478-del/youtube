@@ -646,8 +646,11 @@ private fun YouTubeApp() {
                                 customFullscreenView = view
                                 customViewCallback = callback
                             },
+                            // WebChromeClient calls this after the browser has already
+                            // requested fullscreen exit. Clear our overlay state here, but do
+                            // not call onCustomViewHidden() again (that would re-enter the
+                            // WebChromeClient callback and can leave the player black).
                             onHideCustomView = {
-                                customViewCallback?.onCustomViewHidden()
                                 customFullscreenView = null
                                 customViewCallback = null
                             },

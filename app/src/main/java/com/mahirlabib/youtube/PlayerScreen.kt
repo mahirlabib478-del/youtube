@@ -117,23 +117,15 @@ fun PlayerScreen(
     val videoId = video.videoId
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
-    var isFullscreenControlsVisible by remember(videoId, isFullscreenExpanded) { mutableStateOf(true) }
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
 
-    // Auto-hide fullscreen controls after 3.5 seconds
-    LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
-        if (isFullscreenExpanded && isFullscreenControlsVisible) {
-            delay(3500)
-            isFullscreenControlsVisible = false
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    LaunchedEffect(configuration.orientation) {
+        if (configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+            if (!isFullscreenExpanded) {
+                isFullscreenExpanded = true
+            }
         }
-    }
-
-    // Remember the orientation the user was in before fullscreen so exiting returns
-    // to that exact orientation instead of re-reading the device sensor (which can
-    // cause a second rotation/jump while the fullscreen layout is collapsing).
-    val orientationBeforeFullscreen = remember(videoId, activity) {
-        activity?.resources?.configuration?.orientation
-            ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
     }
 
     LaunchedEffect(isFullscreenExpanded) {
@@ -144,16 +136,15 @@ fun PlayerScreen(
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            isFullscreenControlsVisible = true
         } else {
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        // Seamlessly resume playback after rotation/resize transition
-        delay(250)
-        resumeTrigger++
-        delay(400)
-        resumeTrigger++
+        // Seamlessly and aggressively resume playback throughout rotation/resize transition
+        repeat(5) {
+            delay(150)
+            resumeTrigger++
+        }
     }
 
     DisposableEffect(activity, videoId) {
@@ -313,8 +304,15 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     autoplay = true,
                     resumeTrigger = resumeTrigger,
-                    onShowCustomView = onShowCustomView,
-                    onHideCustomView = onHideCustomView
+                    onShowCustomView = { _, callback ->
+                        isFullscreenExpanded = true
+                        callback.onCustomViewHidden()
+                        resumeTrigger++
+                    },
+                    onHideCustomView = {
+                        isFullscreenExpanded = false
+                        resumeTrigger++
+                    }
                 )
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
@@ -335,7 +333,7 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded) {
-                    // Floating unobtrusive exit button in top corner - always accessible even if title bar fades
+                    // Floating unobtrusive exit button in top corner - allows quick 1-tap exit without any top bar
                     IconButton(
                         onClick = { isFullscreenExpanded = false },
                         modifier = Modifier
@@ -351,57 +349,6 @@ fun PlayerScreen(
                             tint = Color.White,
                             modifier = Modifier.size(22.dp)
                         )
-                    }
-
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = isFullscreenControlsVisible,
-                        enter = fadeIn(animationSpec = tween(200)),
-                        exit = fadeOut(animationSpec = tween(300)),
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xCC000000))
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                IconButton(
-                                    onClick = { isFullscreenExpanded = false },
-                                    modifier = Modifier.testTag("fullscreen_back_icon")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Exit Fullscreen",
-                                        tint = Color.White
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = video.title,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(
-                                onClick = { isFullscreenExpanded = false },
-                                modifier = Modifier.testTag("exit_fullscreen_mode_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.FullscreenExit,
-                                    contentDescription = "Exit Fullscreen",
-                                    tint = Color.White
-                                )
-                            }
-                        }
                     }
                 }
             }

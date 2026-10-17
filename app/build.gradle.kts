@@ -17,6 +17,21 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
+        create("release") {
+            val releaseStoreFile = providers.environmentVariable("RELEASE_KEYSTORE_PATH").orNull
+            if (!releaseStoreFile.isNullOrBlank()) {
+                storeFile = file(releaseStoreFile)
+            }
+            storePassword = providers.environmentVariable("RELEASE_STORE_PASSWORD").orNull
+                ?: providers.gradleProperty("RELEASE_STORE_PASSWORD").orNull
+                ?: ""
+            keyAlias = providers.environmentVariable("RELEASE_KEY_ALIAS").orNull
+                ?: providers.gradleProperty("RELEASE_KEY_ALIAS").orNull
+                ?: ""
+            keyPassword = providers.environmentVariable("RELEASE_KEY_PASSWORD").orNull
+                ?: providers.gradleProperty("RELEASE_KEY_PASSWORD").orNull
+                ?: ""
+        }
     }
 
     defaultConfig {
@@ -31,6 +46,15 @@ android {
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debugConfig")
+        }
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 

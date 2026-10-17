@@ -56,6 +56,23 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun subscribedFeedBalancesChannelsBeforeShowingSecondVideoFromAnyChannel() {
+        val videos = listOf(
+            YouTubeVideo("a-new", "A newest", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-mid", "A middle", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-01-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-new", "B newest", "Channel B", "2025-02-20T10:00:00Z", channelId = "B"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2024-12-01T10:00:00Z", channelId = "B"),
+            YouTubeVideo("c-new", "C newest", "Channel C", "2025-02-10T10:00:00Z", channelId = "C")
+        )
+
+        val balanced = balanceVideosAcrossChannels(videos)
+
+        assertEquals(listOf("A", "B", "C", "A", "B", "A"), balanced.map { it.channelId })
+        assertEquals(listOf("a-new", "b-new", "c-new", "a-mid", "b-old", "a-old"), balanced.map { it.videoId })
+    }
+
+    @Test
     fun subscribedFeedSortKeepsStableOrderForEqualTimestamps() {
         val videos = listOf(
             YouTubeVideo("video-z", "Z", "Channel Z", "2025-01-01T10:00:00Z"),

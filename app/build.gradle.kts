@@ -49,12 +49,9 @@ android {
         }
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // Keep the first release build conservative until WebView/player shrinker rules are validated.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 

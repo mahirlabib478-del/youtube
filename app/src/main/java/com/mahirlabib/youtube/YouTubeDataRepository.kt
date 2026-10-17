@@ -47,6 +47,30 @@ internal fun sortVideosNewestFirst(videos: List<YouTubeVideo>): List<YouTubeVide
  * first-page candidates so manual refresh is visibly useful. If new uploads
  * exist, keep that channel newest-first so newly published videos stay on top.
  */
+private fun interleaveChannelQueuesPreservingOrder(videos: List<YouTubeVideo>): List<YouTubeVideo> {
+    val perChannel = videos.distinctBy { it.videoId }
+        .groupBy { video ->
+            video.channelId.ifBlank { video.channelTitle.ifBlank { video.videoId } }
+        }
+    val channelOrder = perChannel.keys.sortedWith(
+        compareByDescending<String> { key -> perChannel[key].orEmpty().firstOrNull()?.publishedAt.orEmpty() }
+            .thenBy { it }
+    )
+    val result = mutableListOf<YouTubeVideo>()
+    var index = 0
+    while (true) {
+        var added = false
+        for (channelKey in channelOrder) {
+            val video = perChannel[channelKey]?.getOrNull(index) ?: continue
+            result += video
+            added = true
+        }
+        if (!added) break
+        index++
+    }
+    return result
+}
+
 internal fun refreshBalancedVideos(
     freshVideos: List<YouTubeVideo>,
     previousVideos: List<YouTubeVideo>,
@@ -73,7 +97,7 @@ internal fun refreshBalancedVideos(
                 newestFirst.drop(offset) + newestFirst.take(offset)
             }
         }
-    return balanceVideosAcrossChannels(rotated)
+    return interleaveChannelQueuesPreservingOrder(rotated)
 }
 
 internal fun balanceVideosAcrossChannels(videos: List<YouTubeVideo>): List<YouTubeVideo> {

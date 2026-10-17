@@ -463,12 +463,13 @@ object YouTubeDataRepository {
         withContext(Dispatchers.IO) {
             val input = rawInput.trim()
             require(input.isNotBlank()) { "Please enter a channel name, handle, or URL." }
-            require(isApiKeyConfigured(apiKey)) { "YouTube Data API key is not configured. Add YOUTUBE_API_KEY to GitHub Actions secrets." }
 
             // Resolve a direct channel ID or /channel/ URL without scraping YouTube HTML.
             if (isValidYouTubeChannelId(input)) return@withContext fetchChannelDetails(apiKey, input)
             val channelUrlMatch = Regex("""youtube\.com/channel/(UC[A-Za-z0-9_-]{22})""").find(input)
             if (channelUrlMatch != null) return@withContext fetchChannelDetails(apiKey, channelUrlMatch.groupValues[1])
+
+            require(isApiKeyConfigured(apiKey)) { "YouTube Data API key is not configured. Add YOUTUBE_API_KEY in the Secrets panel." }
 
             // The official channels.list forHandle parameter supports @handles.
             val handleMatch = Regex("""(?:youtube\.com/)?@([A-Za-z0-9._-]+)""").find(input)
@@ -508,57 +509,72 @@ object YouTubeDataRepository {
         val normalizedId = channelId.trim()
         require(isValidYouTubeChannelId(normalizedId)) { "Invalid YouTube channel ID." }
         val apiKey = BuildConfig.YOUTUBE_API_KEY
-        require(apiKey.isNotBlank() && !apiKey.contains("YOUR_", ignoreCase = true) && !apiKey.contains("PLACEHOLDER", ignoreCase = true)) {
-            "YouTube Data API key is not configured. Add YOUTUBE_API_KEY to GitHub Actions secrets."
-        }
 
-        // Use the official YouTube Data API instead of scraping channel HTML or
-        // calling the undocumented youtubei browse endpoint.
-        val channelUrl = "https://www.googleapis.com/youtube/v3/channels" +
-            "?part=contentDetails,snippet&id=${encode(normalizedId)}&key=${encode(apiKey)}"
-        val channelResponse = getJson(channelUrl)
-        val channelItem = channelResponse.optJSONArray("items")?.optJSONObject(0)
-            ?: return@withContext ChannelVideosPage(emptyList(), null)
-        val uploadsPlaylistId = channelItem.optJSONObject("contentDetails")
-            ?.optJSONObject("relatedPlaylists")
-            ?.optString("uploads")
-            .orEmpty()
-        if (uploadsPlaylistId.isBlank()) return@withContext ChannelVideosPage(emptyList(), null)
+        if (isApiKeyConfigured(apiKey)) {
+            val apiResult = runCatching {
+                val channelUrl = "https://www.googleapis.com/youtube/v3/channels" +
+                    "?part=contentDetails,snippet&id=${encode(normalizedId)}&key=${encode(apiKey)}"
+                val channelResponse = getJson(channelUrl)
+                val channelItem = channelResponse.optJSONArray("items")?.optJSONObject(0)
+                    ?: return@runCatching null
+                val uploadsPlaylistId = channelItem.optJSONObject("contentDetails")
+                    ?.optJSONObject("relatedPlaylists")
+                    ?.optString("uploads")
+                    .orEmpty()
+                if (uploadsPlaylistId.isBlank()) return@runCatching null
 
-        val pageParam = continuationToken?.takeIf { it.isNotBlank() }
-            ?.let { "&pageToken=${encode(it)}" }.orEmpty()
-        val playlistUrl = "https://www.googleapis.com/youtube/v3/playlistItems" +
-            "?part=snippet,contentDetails&playlistId=${encode(uploadsPlaylistId)}" +
-            "&maxResults=50$pageParam&key=${encode(apiKey)}"
-        val response = getJson(playlistUrl)
-        val items = response.optJSONArray("items") ?: JSONArray()
-        val channelTitle = channelItem.optJSONObject("snippet")?.optString("title").orEmpty()
-        val videos = buildList {
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index) ?: continue
-                val snippet = item.optJSONObject("snippet") ?: continue
-                val videoId = snippet.optJSONObject("resourceId")?.optString("videoId")
-                    ?.takeIf { it.isNotBlank() }
-                    ?: item.optJSONObject("contentDetails")?.optString("videoId")?.takeIf { it.isNotBlank() }
-                    ?: continue
-                val thumbnails = snippet.optJSONObject("thumbnails")
-                val title = snippet.optString("title").takeUnless { it.isNullOrBlank() } ?: "Untitled video"
-                add(
-                    YouTubeVideo(
-                        videoId = videoId,
-                        title = title,
-                        channelTitle = snippet.optString("channelTitle").takeUnless { it.isNullOrBlank() } ?: channelTitle,
-                        publishedAt = snippet.optString("publishedAt"),
-                        description = snippet.optString("description"),
-                        channelId = normalizedId,
-                        channelAvatarUrl = channelAvatarUrl,
-                        viewCount = ""
-                    )
-                )
+                val pageParam = continuationToken?.takeIf { it.isNotBlank() }
+                    ?.let { "&pageToken=${encode(it)}" }.orEmpty()
+                val playlistUrl = "https://www.googleapis.com/youtube/v3/playlistItems" +
+                    "?part=snippet,contentDetails&playlistId=${encode(uploadsPlaylistId)}" +
+                    "&maxResults=50$pageParam&key=${encode(apiKey)}"
+                val response = getJson(playlistUrl)
+                val items = response.optJSONArray("items") ?: JSONArray()
+                val channelTitle = channelItem.optJSONObject("snippet")?.optString("title").orEmpty()
+                val videos = buildList {
+                    for (index in 0 until items.length()) {
+                        val item = items.optJSONObject(index) ?: continue
+                        val snippet = item.optJSONObject("snippet") ?: continue
+                        val videoId = snippet.optJSONObject("resourceId")?.optString("videoId")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: item.optJSONObject("contentDetails")?.optString("videoId")?.takeIf { it.isNotBlank() }
+                            ?: continue
+                        val title = snippet.optString("title").takeUnless { it.isNullOrBlank() } ?: "Untitled video"
+                        add(
+                            YouTubeVideo(
+                                videoId = videoId,
+                                title = title,
+                                channelTitle = snippet.optString("channelTitle").takeUnless { it.isNullOrBlank() } ?: channelTitle,
+                                publishedAt = snippet.optString("publishedAt"),
+                                description = snippet.optString("description"),
+                                channelId = normalizedId,
+                                channelAvatarUrl = channelAvatarUrl,
+                                viewCount = ""
+                            )
+                        )
+                    }
+                }
+                val nextToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
+                ChannelVideosPage(videos.distinctBy { it.videoId }, nextToken)
+            }.getOrNull()
+
+            if (apiResult != null && (apiResult.videos.isNotEmpty() || !continuationToken.isNullOrBlank())) {
+                return@withContext apiResult
             }
         }
-        val nextToken = response.optString("nextPageToken").takeIf { it.isNotBlank() }
-        ChannelVideosPage(videos.distinctBy { it.videoId }, nextToken)
+
+        // Fallback to official public RSS feed if API key is not configured or query fails
+        val (feedTitle, rssVideos) = fetchChannelRssVideos(normalizedId)
+        val realAvatar = channelAvatarUrl.ifBlank {
+            ApprovedChannelStore.DEFAULT_CHANNELS.find { it.channelId == normalizedId }?.avatarUrl.orEmpty()
+        }
+        val videosWithAvatar = rssVideos.map {
+            it.copy(
+                channelAvatarUrl = realAvatar,
+                channelTitle = if (it.channelTitle.isNotBlank() && it.channelTitle != normalizedId) it.channelTitle else feedTitle.ifBlank { it.channelTitle }
+            )
+        }
+        ChannelVideosPage(videosWithAvatar.distinctBy { it.videoId }, null)
     }
 
     private fun parseVideosFromYouTubeJson(

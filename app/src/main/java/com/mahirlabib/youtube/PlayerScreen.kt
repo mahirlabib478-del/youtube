@@ -141,14 +141,10 @@ fun PlayerScreen(
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             isFullscreenControlsVisible = true
         } else {
-            activity.requestedOrientation = when (orientationBeforeFullscreen) {
-                android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
-                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
     }
@@ -159,11 +155,7 @@ fun PlayerScreen(
             if (window != null) {
                 val insetsController = WindowCompat.getInsetsController(window, window.decorView)
                 insetsController.show(WindowInsetsCompat.Type.systemBars())
-                activity.requestedOrientation = when (orientationBeforeFullscreen) {
-                    android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
-                        ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                    else -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-                }
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
         }
     }
@@ -335,17 +327,6 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded) {
-                    // Tap detector overlay to toggle controls visibility
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                isFullscreenControlsVisible = !isFullscreenControlsVisible
-                            }
-                    )
 
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isFullscreenControlsVisible,

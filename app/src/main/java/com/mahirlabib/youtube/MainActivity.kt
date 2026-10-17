@@ -171,13 +171,9 @@ private fun YouTubeApp() {
             insetsController.systemBarsBehavior =
                 androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            activity.requestedOrientation = when (orientationBeforeYouTubeFullscreen) {
-                android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
-                    android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-                else -> android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            }
+            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
         }
     }
@@ -358,6 +354,7 @@ private fun YouTubeApp() {
     BackHandler(enabled = customFullscreenView != null || selectedChannel != null || activeVideo != null || selectedTab != 0) {
         when {
             customFullscreenView != null -> {
+                (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
                 customViewCallback?.onCustomViewHidden()
                 customFullscreenView = null
                 customViewCallback = null
@@ -409,46 +406,9 @@ private fun YouTubeApp() {
         // Keep the existing PlayerScreen/WebView composed during Android PiP.
         // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.
 
-        // True Fullscreen Video Overlay when triggered by WebChromeClient
-        if (customFullscreenView != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .testTag("fullscreen_video_overlay")
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                        customFullscreenView ?: View(it)
-                    }
-                )
-
-                IconButton(
-                    onClick = {
-                        customViewCallback?.onCustomViewHidden()
-                        customFullscreenView = null
-                        customViewCallback = null
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color(0x88000000), CircleShape)
-                        .testTag("exit_fullscreen_icon")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FullscreenExit,
-                        contentDescription = "Exit Fullscreen",
-                        tint = Color.White
-                    )
-                }
-            }
-            return@MaterialTheme
-        }
-
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 if ((activeVideo == null || isMiniPlayer) && selectedChannel == null) {
                     TopAppBar(
@@ -766,7 +726,46 @@ private fun YouTubeApp() {
                 }
             }
         }
+
+        // True Fullscreen Video Overlay when triggered by WebChromeClient
+        if (customFullscreenView != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .testTag("fullscreen_video_overlay")
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                        customFullscreenView ?: View(it)
+                    }
+                )
+
+                IconButton(
+                    onClick = {
+                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                        customViewCallback?.onCustomViewHidden()
+                        customFullscreenView = null
+                        customViewCallback = null
+                    },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .background(Color(0x88000000), CircleShape)
+                        .testTag("exit_fullscreen_icon")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FullscreenExit,
+                        contentDescription = "Exit Fullscreen",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
     }
+}
 }
 
 /**

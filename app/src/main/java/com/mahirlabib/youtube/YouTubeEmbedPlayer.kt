@@ -124,7 +124,7 @@ private fun YouTubeEmbedPlayerInstance(
                     resumeTimers()
                     onResume()
 
-                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                    setLayerType(View.LAYER_TYPE_NONE, null)
                     clipChildren = true
                     clipToPadding = true
                     layoutParams = ViewGroup.LayoutParams(
@@ -351,9 +351,10 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
             <div id="player-container">
                 <iframe
                     id="yt-embed"
-                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=0&enablejsapi=1&origin=https://www.youtube-nocookie.com"
+                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
                     referrerpolicy="strict-origin-when-cross-origin"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share">
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                    allowfullscreen>
                 </iframe>
             </div>
 

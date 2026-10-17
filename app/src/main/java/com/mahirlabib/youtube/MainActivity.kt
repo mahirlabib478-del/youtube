@@ -151,32 +151,7 @@ private fun YouTubeApp() {
     var channelListRefreshKey by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Fullscreen video state
-    var customFullscreenView by remember { mutableStateOf<View?>(null) }
-    var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
-
     val activity = context as? ComponentActivity
-
-    // Keep the entry orientation stable so native YouTube fullscreen exits back to
-    // the same layout instead of letting the device sensor trigger another rotation.
-    val orientationBeforeYouTubeFullscreen = remember(activity) {
-        activity?.resources?.configuration?.orientation
-            ?: android.content.res.Configuration.ORIENTATION_PORTRAIT
-    }
-
-    LaunchedEffect(customFullscreenView) {
-        val window = activity?.window ?: return@LaunchedEffect
-        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-        if (customFullscreenView != null) {
-            insetsController.systemBarsBehavior =
-                androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        } else {
-            activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        }
-    }
 
     fun playVideo(video: YouTubeVideo) {
         // Leaving the channel detail route is required because it has higher
@@ -351,14 +326,8 @@ private fun YouTubeApp() {
     }
 
     // Device Back Navigation handler
-    BackHandler(enabled = customFullscreenView != null || selectedChannel != null || activeVideo != null || selectedTab != 0) {
+    BackHandler(enabled = selectedChannel != null || activeVideo != null || selectedTab != 0) {
         when {
-            customFullscreenView != null -> {
-                (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                customViewCallback?.onCustomViewHidden()
-                customFullscreenView = null
-                customViewCallback = null
-            }
             selectedChannel != null -> {
                 selectedChannel = null
             }
@@ -602,15 +571,6 @@ private fun YouTubeApp() {
                                 else isMiniPlayer = true
                             },
                             onPlayRelated = { playVideo(it) },
-                            onShowCustomView = { view, callback ->
-                                customFullscreenView = view
-                                customViewCallback = callback
-                            },
-                            onHideCustomView = {
-                                customViewCallback?.onCustomViewHidden()
-                                customFullscreenView = null
-                                customViewCallback = null
-                            },
                             onOpenChannel = { chId, chTitle, chAvatar ->
                                 isMiniPlayer = true
                                 openChannel(chId, chTitle, chAvatar)
@@ -727,43 +687,6 @@ private fun YouTubeApp() {
             }
         }
 
-        // True Fullscreen Video Overlay when triggered by WebChromeClient
-        if (customFullscreenView != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .testTag("fullscreen_video_overlay")
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                        customFullscreenView ?: View(it)
-                    }
-                )
-
-                IconButton(
-                    onClick = {
-                        (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                        customViewCallback?.onCustomViewHidden()
-                        customFullscreenView = null
-                        customViewCallback = null
-                    },
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color(0x88000000), CircleShape)
-                        .testTag("exit_fullscreen_icon")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FullscreenExit,
-                        contentDescription = "Exit Fullscreen",
-                        tint = Color.White
-                    )
-                }
-            }
-        }
     }
 }
 }

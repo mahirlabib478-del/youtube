@@ -387,11 +387,12 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
             <script>
                 var iframe = document.getElementById('yt-embed');
-                var wasPlaying = false;
+                var wasPlaying = true;
 
                 function resumePlayback() {
                     try {
                         if (iframe && iframe.contentWindow) {
+                            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
                             iframe.contentWindow.postMessage(JSON.stringify({
                                 event: 'command',
                                 func: 'playVideo',

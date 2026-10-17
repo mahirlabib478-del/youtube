@@ -7,9 +7,11 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -118,6 +120,19 @@ fun PlayerScreen(
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
+    var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
+    var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+
+    val exitFullscreen: () -> Unit = {
+        customFullscreenView?.let { v ->
+            (v.parent as? ViewGroup)?.removeView(v)
+        }
+        customViewCallback?.onCustomViewHidden()
+        customFullscreenView = null
+        customViewCallback = null
+        isFullscreenExpanded = false
+        resumeTrigger++
+    }
 
     LaunchedEffect(isFullscreenExpanded) {
         val window = activity?.window ?: return@LaunchedEffect
@@ -131,14 +146,20 @@ fun PlayerScreen(
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        delay(250)
+        delay(150)
         resumeTrigger++
-        delay(400)
+        delay(350)
+        resumeTrigger++
+        delay(700)
         resumeTrigger++
     }
 
     DisposableEffect(activity, videoId) {
         onDispose {
+            customFullscreenView?.let { v ->
+                (v.parent as? ViewGroup)?.removeView(v)
+            }
+            customViewCallback?.onCustomViewHidden()
             val window = activity?.window
             if (window != null) {
                 val insetsController = WindowCompat.getInsetsController(window, window.decorView)
@@ -149,8 +170,8 @@ fun PlayerScreen(
     }
 
     BackHandler {
-        if (isFullscreenExpanded) {
-            isFullscreenExpanded = false
+        if (isFullscreenExpanded || customFullscreenView != null) {
+            exitFullscreen()
         } else {
             onClose()
         }
@@ -264,7 +285,10 @@ fun PlayerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = { isFullscreenExpanded = true },
+                        onClick = {
+                            isFullscreenExpanded = true
+                            resumeTrigger++
+                        },
                         modifier = Modifier.testTag("top_fullscreen_button")
                     ) {
                         Icon(
@@ -294,16 +318,33 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     autoplay = true,
                     resumeTrigger = resumeTrigger,
-                    onShowCustomView = { _, callback ->
+                    onShowCustomView = { view, callback ->
+                        customFullscreenView = view
+                        customViewCallback = callback
                         isFullscreenExpanded = true
-                        callback.onCustomViewHidden()
                         resumeTrigger++
                     },
                     onHideCustomView = {
+                        customFullscreenView?.let { v ->
+                            (v.parent as? ViewGroup)?.removeView(v)
+                        }
+                        customFullscreenView = null
+                        customViewCallback = null
                         isFullscreenExpanded = false
                         resumeTrigger++
                     }
                 )
+
+                if (customFullscreenView != null) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = {
+                            (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                            customFullscreenView ?: View(it)
+                        }
+                    )
+                }
+
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
                     Box(
@@ -322,10 +363,10 @@ fun PlayerScreen(
                     }
                 }
 
-                if (isFullscreenExpanded) {
+                if (isFullscreenExpanded || customFullscreenView != null) {
                     // Floating unobtrusive exit button in top corner - allows quick 1-tap exit without any top bar
                     IconButton(
-                        onClick = { isFullscreenExpanded = false },
+                        onClick = exitFullscreen,
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(14.dp)
@@ -571,7 +612,10 @@ fun PlayerScreen(
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
-                                onClick = { isFullscreenExpanded = true },
+                                onClick = {
+                                    isFullscreenExpanded = true
+                                    resumeTrigger++
+                                },
                                 modifier = Modifier.testTag("fullscreen_pill_button")
                             ) {
                                 Row(

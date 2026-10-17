@@ -37,6 +37,41 @@ internal fun sortVideosNewestFirst(videos: List<YouTubeVideo>): List<YouTubeVide
     videos.distinctBy { it.videoId }
         .sortedWith(compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId })
 
+/**
+ * Keeps the Subscriptions feed balanced: show one newest video from each channel
+ * before showing a channel's second video. Channel priority is based on each
+ * channel's newest upload, while each channel's own videos remain newest-first.
+ */
+internal fun balanceVideosAcrossChannels(videos: List<YouTubeVideo>): List<YouTubeVideo> {
+    val perChannel = videos.distinctBy { it.videoId }
+        .groupBy { video ->
+            video.channelId.ifBlank { video.channelTitle.ifBlank { video.videoId } }
+        }
+        .mapValues { (_, channelVideos) ->
+            channelVideos.sortedWith(
+                compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId }
+            )
+        }
+
+    val channelOrder = perChannel.keys.sortedWith(
+        compareByDescending<String> { key -> perChannel[key].orEmpty().firstOrNull()?.publishedAt.orEmpty() }
+            .thenBy { it }
+    )
+    val result = ArrayList<YouTubeVideo>(videos.size)
+    var index = 0
+    while (true) {
+        var addedAtThisRound = false
+        for (channelKey in channelOrder) {
+            val video = perChannel[channelKey]?.getOrNull(index) ?: continue
+            result += video
+            addedAtThisRound = true
+        }
+        if (!addedAtThisRound) break
+        index++
+    }
+    return result
+}
+
 data class YouTubeComment(
     val author: String,
     val text: String,

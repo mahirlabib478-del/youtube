@@ -147,4 +147,36 @@ class ExampleUnitTest {
         assertEquals("M7lc1UVf-VE", vid)
         assertEquals("Sample Video Title", title)
     }
+
+    @Test
+    fun refreshRotatesUnchangedChannelVideosButKeepsChannelBalance() {
+        val videos = listOf(
+            YouTubeVideo("a-new", "A newest", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-new", "B newest", "Channel B", "2025-02-20T10:00:00Z", channelId = "B"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2025-01-01T10:00:00Z", channelId = "B")
+        )
+
+        val refreshed = refreshBalancedVideos(videos, videos, rotationStep = 1)
+
+        assertEquals(listOf("a-old", "b-old", "a-new", "b-new"), refreshed.map { it.videoId })
+        assertEquals(listOf("A", "B", "A", "B"), refreshed.map { it.channelId })
+    }
+
+    @Test
+    fun refreshKeepsNewUploadsAtTopInsteadOfRotatingThatChannel() {
+        val previous = listOf(
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2025-01-01T10:00:00Z", channelId = "B")
+        )
+        val fresh = listOf(
+            YouTubeVideo("a-new", "A new", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            previous[0],
+            previous[1]
+        )
+
+        val refreshed = refreshBalancedVideos(fresh, previous, rotationStep = 1)
+
+        assertEquals("a-new", refreshed.first { it.channelId == "A" }.videoId)
+    }
 }

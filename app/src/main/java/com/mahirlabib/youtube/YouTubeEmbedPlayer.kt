@@ -102,14 +102,8 @@ private fun YouTubeEmbedPlayerInstance(
                 """
                 (function() {
                     try {
-                        if (typeof window.resumePlayback === 'function') {
-                            window.resumePlayback();
-                        } else {
-                            var ifr = document.getElementById('yt-embed');
-                            if (ifr && ifr.contentWindow) {
-                                ifr.contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*');
-                                ifr.contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:''}), '*');
-                            }
+                        if (typeof window.safeResumePlayback === 'function') {
+                            window.safeResumePlayback();
                         }
                     } catch(e) {}
                 })();
@@ -387,38 +381,36 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
             <script>
                 var iframe = document.getElementById('yt-embed');
-                var wasPlaying = true;
+                var isActuallyPlaying = false;
+                var debounceTimer = null;
 
-                function resumePlayback() {
+                function safeResumePlayback() {
+                    if (!isActuallyPlaying) return;
                     try {
                         if (iframe && iframe.contentWindow) {
-                            iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
                             iframe.contentWindow.postMessage(JSON.stringify({
                                 event: 'command',
                                 func: 'playVideo',
                                 args: []
                             }), '*');
-                            iframe.contentWindow.postMessage(JSON.stringify({
-                                event: 'command',
-                                func: 'playVideo',
-                                args: ''
-                            }), '*');
                         }
                     } catch(e) {}
                 }
 
-                window.resumePlayback = resumePlayback;
+                window.safeResumePlayback = safeResumePlayback;
 
-                // Listen for YouTube player state changes
+                // Listen for YouTube player state changes to know whether video is really playing
                 window.addEventListener('message', function(event) {
                     try {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                         if (data && data.event === 'infoDelivery' && data.info) {
                             var state = data.info.playerState;
                             if (state === 1) {
-                                wasPlaying = true;
+                                isActuallyPlaying = true;
+                            } else if (state === 2) {
+                                isActuallyPlaying = false;
                             } else if (state === 0) {
-                                wasPlaying = false;
+                                isActuallyPlaying = false;
                                 if (iframe && iframe.contentWindow) {
                                     iframe.contentWindow.postMessage(JSON.stringify({
                                         event: 'command',
@@ -436,65 +428,23 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     } catch(e) {}
                 });
 
-                // Auto-resume playback if orientation change or layout resize paused the video
-                var resizeTimer = null;
+                // Debounced resume playback when screen orientation or window size changes while playing
                 window.addEventListener('resize', function() {
-                    clearTimeout(resizeTimer);
-                    resizeTimer = setTimeout(resumePlayback, 200);
-                    setTimeout(resumePlayback, 500);
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(safeResumePlayback, 250);
                 });
 
                 window.addEventListener('focus', function() {
-                    setTimeout(resumePlayback, 200);
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(safeResumePlayback, 250);
                 });
 
                 document.addEventListener('visibilitychange', function() {
                     if (!document.hidden) {
-                        setTimeout(resumePlayback, 200);
+                        clearTimeout(debounceTimer);
+                        debounceTimer = setTimeout(safeResumePlayback, 250);
                     }
                 });
-
-                // Periodic check to inject CSS rules to eliminate "Watch on YouTube" and overlays
-                function injectAntiDistractionStyle() {
-                    try {
-                        var doc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (doc && !doc.getElementById('clean-player-style')) {
-                            var style = doc.createElement('style');
-                            style.id = 'clean-player-style';
-                            style.innerHTML = `
-                                .ytp-youtube-button,
-                                a.ytp-youtube-button,
-                                .ytp-impression-link,
-                                .ytp-title-link,
-                                .ytp-watermark,
-                                .ytp-pause-overlay,
-                                .ytp-pause-overlay-container,
-                                .ytp-scroll-min,
-                                .ytp-endscreen-paginate,
-                                .ytp-ce-element,
-                                .ytp-ce-video,
-                                .ytp-ce-channel,
-                                .ytp-ce-playlist,
-                                .ytp-cards-teaser,
-                                .ytp-cards-button,
-                                .ytp-suggestion-set,
-                                .ytp-show-tiles,
-                                .ytp-related-on-error-overlay {
-                                    display: none !important;
-                                    visibility: hidden !important;
-                                    opacity: 0 !important;
-                                    pointer-events: none !important;
-                                }
-                            `;
-                            doc.head.appendChild(style);
-                        }
-                    } catch(e) {}
-                }
-
-                iframe.onload = function() {
-                    injectAntiDistractionStyle();
-                    setInterval(injectAntiDistractionStyle, 800);
-                };
             </script>
         </body>
         </html>

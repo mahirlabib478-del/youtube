@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -16,6 +17,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -122,36 +130,53 @@ fun PlayerScreen(
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
     var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    var showFullscreenControls by remember(videoId) { mutableStateOf(false) }
 
     val exitFullscreen: () -> Unit = {
-        customFullscreenView?.let { v ->
-            (v.parent as? ViewGroup)?.removeView(v)
-        }
-        customViewCallback?.onCustomViewHidden()
+        val cb = customViewCallback
+        val v = customFullscreenView
         customFullscreenView = null
         customViewCallback = null
         isFullscreenExpanded = false
-        resumeTrigger++
+        showFullscreenControls = false
+        if (cb != null) {
+            try {
+                cb.onCustomViewHidden()
+            } catch (e: Exception) {
+                Log.w("PlayerScreen", "Error dismissing customViewCallback", e)
+            }
+        }
+        if (v != null) {
+            try {
+                (v.parent as? ViewGroup)?.removeView(v)
+            } catch (e: Exception) {
+                Log.w("PlayerScreen", "Error removing customFullscreenView", e)
+            }
+        }
+    }
+
+    // Auto-hide controls in fullscreen after 3.5 seconds of inactivity
+    LaunchedEffect(showFullscreenControls, isFullscreenExpanded) {
+        if (isFullscreenExpanded && showFullscreenControls) {
+            delay(3500)
+            showFullscreenControls = false
+        }
     }
 
     LaunchedEffect(isFullscreenExpanded) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
         if (isFullscreenExpanded) {
+            showFullscreenControls = true
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
+            showFullscreenControls = false
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        delay(150)
-        resumeTrigger++
-        delay(350)
-        resumeTrigger++
-        delay(700)
-        resumeTrigger++
     }
 
     DisposableEffect(activity, videoId) {
@@ -285,10 +310,7 @@ fun PlayerScreen(
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(
-                        onClick = {
-                            isFullscreenExpanded = true
-                            resumeTrigger++
-                        },
+                        onClick = { isFullscreenExpanded = true },
                         modifier = Modifier.testTag("top_fullscreen_button")
                     ) {
                         Icon(
@@ -308,7 +330,19 @@ fun PlayerScreen(
                         .background(Color.Black)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-                })
+                }).then(
+                    if (isFullscreenExpanded) {
+                        Modifier.pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                                if (up != null) {
+                                    showFullscreenControls = !showFullscreenControls
+                                }
+                            }
+                        }
+                    } else Modifier
+                )
             ) {
                 // Keep one embed composable at a stable composition position when
                 // switching between full player and mini-player. Branching into two
@@ -322,16 +356,20 @@ fun PlayerScreen(
                         customFullscreenView = view
                         customViewCallback = callback
                         isFullscreenExpanded = true
-                        resumeTrigger++
                     },
                     onHideCustomView = {
-                        customFullscreenView?.let { v ->
-                            (v.parent as? ViewGroup)?.removeView(v)
-                        }
+                        val v = customFullscreenView
                         customFullscreenView = null
                         customViewCallback = null
                         isFullscreenExpanded = false
-                        resumeTrigger++
+                        showFullscreenControls = false
+                        if (v != null) {
+                            try {
+                                (v.parent as? ViewGroup)?.removeView(v)
+                            } catch (e: Exception) {
+                                Log.w("PlayerScreen", "Error removing custom view on hide", e)
+                            }
+                        }
                     }
                 )
 
@@ -364,22 +402,79 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded || customFullscreenView != null) {
-                    // Floating unobtrusive exit button in top corner - allows quick 1-tap exit without any top bar
-                    IconButton(
-                        onClick = exitFullscreen,
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(14.dp)
-                            .background(Color(0x77000000), CircleShape)
-                            .size(42.dp)
-                            .testTag("fullscreen_floating_exit_button")
+                    // Fullscreen Top Bar overlay: Hidden by default, appears smoothly when screen is tapped
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showFullscreenControls,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(220)),
+                        modifier = Modifier.align(Alignment.TopCenter)
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Exit Fullscreen",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Surface(
+                            color = Color.Transparent,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xE6000000),
+                                            Color(0x99000000),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .statusBarsPadding()
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = exitFullscreen,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color(0x55000000), CircleShape)
+                                        .testTag("fullscreen_floating_exit_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Exit Fullscreen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Spacer(Modifier.width(12.dp))
+
+                                Text(
+                                    text = video.title,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                IconButton(
+                                    onClick = exitFullscreen,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color(0x55000000), CircleShape)
+                                        .testTag("fullscreen_exit_icon_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.FullscreenExit,
+                                        contentDescription = "Exit Fullscreen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -614,7 +709,6 @@ fun PlayerScreen(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
                                 onClick = {
                                     isFullscreenExpanded = true
-                                    resumeTrigger++
                                 },
                                 modifier = Modifier.testTag("fullscreen_pill_button")
                             ) {

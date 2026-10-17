@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun YouTubeApp() {
     val context = LocalContext.current
+    AppUpdatePrompt()
     val scope = rememberCoroutineScope()
     val systemDark = isSystemInDarkTheme()
     var isDarkMode by remember { mutableStateOf(ThemeStore.isDark(context, systemDark)) }

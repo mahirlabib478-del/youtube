@@ -128,6 +128,14 @@ private fun YouTubeApp() {
     // Hoist feed scroll position above the player/feed branch so closing the mini player
     // does not recreate HomeFeed at the top of the list.
     val homeFeedListState = rememberLazyListState()
+
+    // Keep refresh-triggered scroll reset outside HomeFeed so toggling the mini-player
+    // cannot re-run it when the feed composable is re-created.
+    LaunchedEffect(feedRefreshVersion) {
+        if (feedRefreshVersion > 0) {
+            homeFeedListState.scrollToItem(0)
+        }
+    }
     var selectedChannel by remember { mutableStateOf<ChannelDetailState?>(null) }
 
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }

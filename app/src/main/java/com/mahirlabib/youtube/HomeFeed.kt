@@ -82,14 +82,9 @@ fun HomeFeed(
 ) {
     var selectedCategoryIndex by remember { mutableIntStateOf(0) }
 
-    // Reset the list position without a second scroll animation after refresh.
-    // PullToRefreshBox already animates the gesture/indicator; running another scroll
-    // animation here can make the refreshed feed feel like it is jumping or drifting.
-    LaunchedEffect(refreshVersion, isLoading) {
-        if (refreshVersion > 0 && !isLoading) {
-            feedListState.scrollToItem(0)
-        }
-    }
+    // Feed scroll reset is handled by the parent screen. HomeFeed can be removed and
+    // re-added when the mini-player closes; an effect here would run again on re-entry
+    // and incorrectly jump the feed to the top.
     val nearFeedEnd by remember {
         derivedStateOf {
             val total = feedListState.layoutInfo.totalItemsCount

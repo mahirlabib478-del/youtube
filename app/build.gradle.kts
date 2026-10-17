@@ -34,12 +34,27 @@ android {
         }
     }
 
+    val gitTagVersion = providers.environmentVariable("GITHUB_REF_NAME").orNull
+        ?.trim()
+        ?.removePrefix("v")
+        ?.removePrefix("V")
+        ?.takeIf { it.matches(Regex("""\d+(\.\d+)+.*""")) }
+
+    val appVersionName = gitTagVersion ?: "1.0.5"
+    val appVersionCode = gitTagVersion?.let { ver ->
+        val parts = ver.split(Regex("[^0-9]+")).filter { it.isNotBlank() }.map { it.toIntOrNull() ?: 0 }
+        val major = parts.getOrElse(0) { 0 }
+        val minor = parts.getOrElse(1) { 0 }
+        val patch = parts.getOrElse(2) { 0 }
+        major * 10000 + minor * 100 + patch
+    } ?: 5
+
     defaultConfig {
         applicationId = "com.mahirlabib.youtube"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.0.5"
+        versionCode = appVersionCode
+        versionName = appVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

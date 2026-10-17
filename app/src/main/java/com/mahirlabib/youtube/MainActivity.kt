@@ -405,6 +405,7 @@ private fun YouTubeApp() {
     )
 
     MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
+        AppUpdatePrompt()
         // Keep the existing PlayerScreen/WebView composed during Android PiP.
         // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.
 

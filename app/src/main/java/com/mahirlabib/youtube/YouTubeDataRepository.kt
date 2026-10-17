@@ -78,7 +78,7 @@ internal fun refreshBalancedVideos(
 ): List<YouTubeVideo> {
     val previousIdsByChannel = previousVideos.groupBy {
         it.channelId.ifBlank { it.channelTitle.ifBlank { it.videoId } }
-    }.mapValues { (_, items) -> items.mapToSet { it.videoId } }
+    }.mapValues { (_, items) -> items.map { it.videoId }.toSet() }
 
     val rotated = freshVideos.distinctBy { it.videoId }
         .groupBy { it.channelId.ifBlank { it.channelTitle.ifBlank { it.videoId } } }

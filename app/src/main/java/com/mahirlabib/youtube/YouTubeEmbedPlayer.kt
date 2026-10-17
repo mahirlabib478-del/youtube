@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,6 +63,7 @@ fun YouTubeEmbedPlayer(
     videoId: String,
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
+    resumeTrigger: Int = 0,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null
@@ -72,6 +74,7 @@ fun YouTubeEmbedPlayer(
         videoId = videoId,
         modifier = modifier,
         autoplay = autoplay,
+        resumeTrigger = resumeTrigger,
         onPlaybackError = onPlaybackError,
         onShowCustomView = onShowCustomView,
         onHideCustomView = onHideCustomView
@@ -84,6 +87,7 @@ private fun YouTubeEmbedPlayerInstance(
     videoId: String,
     modifier: Modifier = Modifier,
     autoplay: Boolean = true,
+    resumeTrigger: Int = 0,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
     onHideCustomView: (() -> Unit)? = null
@@ -91,6 +95,15 @@ private fun YouTubeEmbedPlayerInstance(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var reloadTrigger by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(resumeTrigger) {
+        if (resumeTrigger > 0) {
+            webViewRef?.evaluateJavascript(
+                "if (typeof resumePlayback === 'function') { resumePlayback(); } else { var ifr = document.getElementById('yt-embed'); if (ifr && ifr.contentWindow) { ifr.contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*'); } }",
+                null
+            )
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -360,26 +373,65 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
             <script>
                 var iframe = document.getElementById('yt-embed');
+                var wasPlaying = false;
 
-                // Suppress end-screen suggestions grid and pause overlays
+                function resumePlayback() {
+                    if (iframe && iframe.contentWindow) {
+                        iframe.contentWindow.postMessage(JSON.stringify({
+                            event: 'command',
+                            func: 'playVideo',
+                            args: []
+                        }), '*');
+                    }
+                }
+
+                // Listen for YouTube player state changes
                 window.addEventListener('message', function(event) {
                     try {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-                        if (data && data.event === 'infoDelivery' && data.info && data.info.playerState === 0) {
-                            if (iframe && iframe.contentWindow) {
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'seekTo',
-                                    args: [0, true]
-                                }), '*');
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'pauseVideo',
-                                    args: []
-                                }), '*');
+                        if (data && data.event === 'infoDelivery' && data.info) {
+                            var state = data.info.playerState;
+                            if (state === 1) {
+                                wasPlaying = true;
+                            } else if (state === 0) {
+                                wasPlaying = false;
+                                if (iframe && iframe.contentWindow) {
+                                    iframe.contentWindow.postMessage(JSON.stringify({
+                                        event: 'command',
+                                        func: 'seekTo',
+                                        args: [0, true]
+                                    }), '*');
+                                    iframe.contentWindow.postMessage(JSON.stringify({
+                                        event: 'command',
+                                        func: 'pauseVideo',
+                                        args: []
+                                    }), '*');
+                                }
                             }
                         }
                     } catch(e) {}
+                });
+
+                // Auto-resume playback if orientation change or layout resize paused the video
+                var resizeTimer = null;
+                window.addEventListener('resize', function() {
+                    if (wasPlaying) {
+                        clearTimeout(resizeTimer);
+                        resizeTimer = setTimeout(resumePlayback, 200);
+                        setTimeout(resumePlayback, 500);
+                    }
+                });
+
+                window.addEventListener('focus', function() {
+                    if (wasPlaying) {
+                        setTimeout(resumePlayback, 200);
+                    }
+                });
+
+                document.addEventListener('visibilitychange', function() {
+                    if (!document.hidden && wasPlaying) {
+                        setTimeout(resumePlayback, 200);
+                    }
                 });
 
                 // Periodic check to inject CSS rules to eliminate "Watch on YouTube" and overlays

@@ -65,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -117,6 +118,7 @@ fun PlayerScreen(
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
     var isFullscreenControlsVisible by remember(videoId, isFullscreenExpanded) { mutableStateOf(true) }
+    var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
 
     // Auto-hide fullscreen controls after 3.5 seconds
     LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
@@ -144,9 +146,14 @@ fun PlayerScreen(
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             isFullscreenControlsVisible = true
         } else {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
+        // Seamlessly resume playback after rotation/resize transition
+        delay(250)
+        resumeTrigger++
+        delay(400)
+        resumeTrigger++
     }
 
     DisposableEffect(activity, videoId) {
@@ -155,7 +162,7 @@ fun PlayerScreen(
             if (window != null) {
                 val insetsController = WindowCompat.getInsetsController(window, window.decorView)
                 insetsController.show(WindowInsetsCompat.Type.systemBars())
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
         }
     }
@@ -305,6 +312,7 @@ fun PlayerScreen(
                     videoId = videoId,
                     modifier = Modifier.fillMaxSize(),
                     autoplay = true,
+                    resumeTrigger = resumeTrigger,
                     onShowCustomView = onShowCustomView,
                     onHideCustomView = onHideCustomView
                 )
@@ -327,6 +335,23 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded) {
+                    // Floating unobtrusive exit button in top corner - always accessible even if title bar fades
+                    IconButton(
+                        onClick = { isFullscreenExpanded = false },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(14.dp)
+                            .background(Color(0x77000000), CircleShape)
+                            .size(42.dp)
+                            .testTag("fullscreen_floating_exit_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
 
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isFullscreenControlsVisible,

@@ -116,15 +116,6 @@ fun PlayerScreen(
     val videoId = video.videoId
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
-    var isFullscreenControlsVisible by remember(videoId, isFullscreenExpanded) { mutableStateOf(true) }
-
-    // Auto-hide fullscreen controls after 3.5 seconds
-    LaunchedEffect(isFullscreenExpanded, isFullscreenControlsVisible) {
-        if (isFullscreenExpanded && isFullscreenControlsVisible) {
-            delay(3500)
-            isFullscreenControlsVisible = false
-        }
-    }
 
     // Remember the orientation the user was in before fullscreen so exiting returns
     // to that exact orientation instead of re-reading the device sensor (which can
@@ -142,7 +133,6 @@ fun PlayerScreen(
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            isFullscreenControlsVisible = true
         } else {
             activity.requestedOrientation = when (orientationBeforeFullscreen) {
                 android.content.res.Configuration.ORIENTATION_LANDSCAPE ->
@@ -315,32 +305,14 @@ fun PlayerScreen(
                     autoplay = true,
                     onShowCustomView = onShowCustomView,
                     onHideCustomView = onHideCustomView,
-                    onPlayerTap = {
-                        if (isFullscreenExpanded) {
-                            isFullscreenControlsVisible = true
-                        }
-                    }
+                    // Keep the fullscreen exit bar persistent: WebView taps are
+                    // consumed by YouTube's own controls, so they are not a reliable
+                    // way to reveal a Compose overlay.
+                    onPlayerTap = {}
                 )
-                // Use the same Compose fullscreen state as the toolbar button.
-                // The embedded YouTube fullscreen control is disabled below (fs=0),
-                // so it cannot open a separate WebChromeClient custom-view fullscreen flow.
-                if (!isFullscreenExpanded && !miniMode) {
-                    IconButton(
-                        onClick = { isFullscreenExpanded = true },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(12.dp)
-                            .size(48.dp)
-                            .background(Color(0xCC000000), CircleShape)
-                            .testTag("player_fullscreen_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Fullscreen,
-                            contentDescription = "Fullscreen",
-                            tint = Color.White
-                        )
-                    }
-                }
+                // YouTube's own fullscreen control is disabled (fs=0). Use the
+                // existing app toolbar entry point instead of adding another button
+                // over the video.
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
                     Box(
@@ -363,7 +335,7 @@ fun PlayerScreen(
                     // Keep the WebView interactive; fullscreen tap detection is handled
                     // by its touch listener and never by a Compose layer above the player.
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = isFullscreenControlsVisible,
+                        visible = true,
                         enter = fadeIn(animationSpec = tween(200)),
                         exit = fadeOut(animationSpec = tween(300)),
                         modifier = Modifier.align(Alignment.TopCenter)

@@ -5,10 +5,12 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -100,3 +102,10 @@ jobs:
             app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Attach signed APK to GitHub Release
+        if: ${{ github.event_name == 'release' && steps.signing.outputs.available == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/*.apk
+          fail_on_unmatched_files: true

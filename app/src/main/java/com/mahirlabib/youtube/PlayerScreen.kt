@@ -12,6 +12,7 @@ import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import kotlin.math.absoluteValue
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -53,6 +54,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ThumbDown
@@ -299,12 +301,37 @@ fun PlayerScreen(
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                 }).then(
                     if (!miniMode) {
-                        Modifier.pointerInput(Unit) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                                if (up != null) {
-                                    showControls = !showControls
+                        Modifier.pointerInput(isFullscreenExpanded) {
+                            if (isFullscreenExpanded) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                    val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                                    if (up != null) {
+                                        showControls = !showControls
+                                    }
+                                }
+                            } else {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                    var hasSwipedDown = false
+                                    while (true) {
+                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                        if (!change.pressed) {
+                                            if (!hasSwipedDown) {
+                                                showControls = !showControls
+                                            }
+                                            break
+                                        }
+                                        val deltaY = change.position.y - down.position.y
+                                        val deltaX = change.position.x - down.position.x
+                                        // Swipe down threshold: downward move of > 65px and predominantly vertical
+                                        if (deltaY > 65f && deltaY > deltaX.absoluteValue * 1.4f) {
+                                            hasSwipedDown = true
+                                            onClose()
+                                            break
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -398,6 +425,29 @@ fun PlayerScreen(
 
                 // Portrait 16:9 Controls overlay: Hidden by default, tap to reveal, auto-hides after 3.5s
                 if (!isFullscreenExpanded && !miniMode) {
+                    // Top-left corner Collapse / Back button
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(220)),
+                        modifier = Modifier.align(Alignment.TopStart)
+                    ) {
+                        IconButton(
+                            onClick = onClose,
+                            modifier = Modifier
+                                .padding(10.dp)
+                                .size(44.dp)
+                                .background(Color(0x66000000), CircleShape)
+                                .testTag("player_back_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Minimize to mini player",
+                                tint = Color.White,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
 
                     // Bottom-right corner Fullscreen button
                     androidx.compose.animation.AnimatedVisibility(

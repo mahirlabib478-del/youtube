@@ -20,8 +20,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
@@ -371,80 +369,7 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded || customFullscreenView != null) {
-                    // Fullscreen Top Bar overlay: Hidden by default, appears smoothly when screen is tapped
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showControls,
-                        enter = fadeIn(tween(180)),
-                        exit = fadeOut(tween(220)),
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    ) {
-                        Surface(
-                            color = Color.Transparent,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color(0xE6000000),
-                                            Color(0x99000000),
-                                            Color.Transparent
-                                        )
-                                    )
-                                )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .statusBarsPadding()
-                                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = exitFullscreen,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(Color(0x55000000), CircleShape)
-                                        .testTag("fullscreen_floating_exit_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                        contentDescription = "Exit Fullscreen",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
 
-                                Spacer(Modifier.width(12.dp))
-
-                                Text(
-                                    text = video.title,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                Spacer(Modifier.width(8.dp))
-
-                                IconButton(
-                                    onClick = exitFullscreen,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(Color(0x55000000), CircleShape)
-                                        .testTag("fullscreen_exit_icon_button")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.FullscreenExit,
-                                        contentDescription = "Exit Fullscreen",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
 
                     // Bottom-right floating exit button when fullscreen controls are revealed
                     androidx.compose.animation.AnimatedVisibility(

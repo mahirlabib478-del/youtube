@@ -130,7 +130,7 @@ fun PlayerScreen(
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
     var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
-    var showFullscreenControls by remember(videoId) { mutableStateOf(false) }
+    var showControls by remember(videoId) { mutableStateOf(false) }
 
     val exitFullscreen: () -> Unit = {
         val cb = customViewCallback
@@ -138,7 +138,7 @@ fun PlayerScreen(
         customFullscreenView = null
         customViewCallback = null
         isFullscreenExpanded = false
-        showFullscreenControls = false
+        showControls = false
         if (cb != null) {
             try {
                 cb.onCustomViewHidden()
@@ -155,11 +155,11 @@ fun PlayerScreen(
         }
     }
 
-    // Auto-hide controls in fullscreen after 3.5 seconds of inactivity
-    LaunchedEffect(showFullscreenControls, isFullscreenExpanded) {
-        if (isFullscreenExpanded && showFullscreenControls) {
+    // Auto-hide controls after 3.5 seconds of inactivity
+    LaunchedEffect(showControls) {
+        if (showControls) {
             delay(3500)
-            showFullscreenControls = false
+            showControls = false
         }
     }
 
@@ -167,17 +167,19 @@ fun PlayerScreen(
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
         if (isFullscreenExpanded) {
-            showFullscreenControls = true
+            showControls = true
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            showFullscreenControls = false
+            showControls = false
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        delay(350)
+        delay(60)
+        resumeTrigger++
+        delay(200)
         resumeTrigger++
     }
 
@@ -288,41 +290,6 @@ fun PlayerScreen(
         }
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            if (!isFullscreenExpanded && !miniMode) {
-                // Top Back Navigation bar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onClose,
-                        modifier = Modifier.testTag("player_back_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to feed"
-                        )
-                    }
-                    Text(
-                        text = "Playing Video",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { isFullscreenExpanded = true },
-                        modifier = Modifier.testTag("top_fullscreen_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Fullscreen,
-                            contentDescription = "Fullscreen"
-                        )
-                    }
-                }
-            }
-
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
                 modifier = (if (isFullscreenExpanded || miniMode) {
@@ -333,13 +300,13 @@ fun PlayerScreen(
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                 }).then(
-                    if (isFullscreenExpanded) {
+                    if (!miniMode) {
                         Modifier.pointerInput(Unit) {
                             awaitEachGesture {
                                 val down = awaitFirstDown(pass = PointerEventPass.Initial)
                                 val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
                                 if (up != null) {
-                                    showFullscreenControls = !showFullscreenControls
+                                    showControls = !showControls
                                 }
                             }
                         }
@@ -364,7 +331,7 @@ fun PlayerScreen(
                         customFullscreenView = null
                         customViewCallback = null
                         isFullscreenExpanded = false
-                        showFullscreenControls = false
+                        showControls = false
                         if (v != null) {
                             try {
                                 (v.parent as? ViewGroup)?.removeView(v)
@@ -406,7 +373,7 @@ fun PlayerScreen(
                 if (isFullscreenExpanded || customFullscreenView != null) {
                     // Fullscreen Top Bar overlay: Hidden by default, appears smoothly when screen is tapped
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = showFullscreenControls,
+                        visible = showControls,
                         enter = fadeIn(tween(180)),
                         exit = fadeOut(tween(220)),
                         modifier = Modifier.align(Alignment.TopCenter)
@@ -481,7 +448,7 @@ fun PlayerScreen(
 
                     // Bottom-right floating exit button when fullscreen controls are revealed
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = showFullscreenControls,
+                        visible = showControls,
                         enter = fadeIn(tween(180)),
                         exit = fadeOut(tween(220)),
                         modifier = Modifier.align(Alignment.BottomEnd)
@@ -504,23 +471,34 @@ fun PlayerScreen(
                     }
                 }
 
-                // Native bottom-right corner Fullscreen button in portrait 16:9 mode
+                // Portrait 16:9 Controls overlay: Hidden by default, tap to reveal, auto-hides after 3.5s
                 if (!isFullscreenExpanded && !miniMode) {
-                    IconButton(
-                        onClick = { isFullscreenExpanded = true },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                            .size(40.dp)
-                            .background(Color(0x66000000), CircleShape)
-                            .testTag("player_corner_fullscreen_button")
+
+                    // Bottom-right corner Fullscreen button
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(220)),
+                        modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Fullscreen,
-                            contentDescription = "Fullscreen",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                isFullscreenExpanded = true
+                                resumeTrigger++
+                            },
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .size(42.dp)
+                                .background(Color(0x66000000), CircleShape)
+                                .testTag("player_corner_fullscreen_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fullscreen,
+                                contentDescription = "Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
             }

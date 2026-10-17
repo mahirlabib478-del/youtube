@@ -103,7 +103,7 @@ private fun YouTubeEmbedPlayerInstance(
                 (function() {
                     try {
                         if (typeof window.safeResumePlayback === 'function') {
-                            window.safeResumePlayback();
+                            window.safeResumePlayback(true);
                         }
                     } catch(e) {}
                 })();
@@ -385,8 +385,8 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                 var debounceTimer = null;
                 var pauseTimeout = null;
 
-                function safeResumePlayback() {
-                    if (!wasPlaying) return;
+                function safeResumePlayback(force) {
+                    if (!force && !wasPlaying) return;
                     try {
                         if (iframe && iframe.contentWindow) {
                             iframe.contentWindow.postMessage(JSON.stringify({
@@ -414,7 +414,7 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                                 clearTimeout(pauseTimeout);
                                 pauseTimeout = setTimeout(function() {
                                     wasPlaying = false;
-                                }, 800);
+                                }, 1600);
                             } else if (state === 0) { // 0 = ENDED
                                 wasPlaying = false;
                                 clearTimeout(pauseTimeout);
@@ -435,21 +435,30 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     } catch(e) {}
                 });
 
-                // Debounced resume playback when screen orientation or window size changes while playing
+                // Immediate and debounced resume playback when screen orientation or window size changes while playing
                 window.addEventListener('resize', function() {
+                    safeResumePlayback(false);
                     clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(safeResumePlayback, 300);
+                    debounceTimer = setTimeout(function() {
+                        safeResumePlayback(false);
+                    }, 100);
                 });
 
                 window.addEventListener('focus', function() {
+                    safeResumePlayback(false);
                     clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(safeResumePlayback, 300);
+                    debounceTimer = setTimeout(function() {
+                        safeResumePlayback(false);
+                    }, 100);
                 });
 
                 document.addEventListener('visibilitychange', function() {
                     if (!document.hidden) {
+                        safeResumePlayback(false);
                         clearTimeout(debounceTimer);
-                        debounceTimer = setTimeout(safeResumePlayback, 300);
+                        debounceTimer = setTimeout(function() {
+                            safeResumePlayback(false);
+                        }, 100);
                     }
                 });
             </script>

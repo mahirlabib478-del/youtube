@@ -478,6 +478,50 @@ fun PlayerScreen(
                             }
                         }
                     }
+
+                    // Bottom-right floating exit button when fullscreen controls are revealed
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showFullscreenControls,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(220)),
+                        modifier = Modifier.align(Alignment.BottomEnd)
+                    ) {
+                        IconButton(
+                            onClick = exitFullscreen,
+                            modifier = Modifier
+                                .padding(18.dp)
+                                .size(48.dp)
+                                .background(Color(0x77000000), CircleShape)
+                                .testTag("fullscreen_bottom_exit_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "Exit Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Native bottom-right corner Fullscreen button in portrait 16:9 mode
+                if (!isFullscreenExpanded && !miniMode) {
+                    IconButton(
+                        onClick = { isFullscreenExpanded = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .size(40.dp)
+                            .background(Color(0x66000000), CircleShape)
+                            .testTag("player_corner_fullscreen_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fullscreen,
+                            contentDescription = "Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
 

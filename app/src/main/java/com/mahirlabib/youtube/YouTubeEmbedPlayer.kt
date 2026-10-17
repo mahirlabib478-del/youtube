@@ -372,9 +372,9 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
             <div id="player-container">
                 <iframe
                     id="yt-embed"
-                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=1&enablejsapi=1&origin=https://www.youtube-nocookie.com"
+                    src="https://www.youtube-nocookie.com/embed/$videoId?autoplay=$autoPlayParam&playsinline=1&controls=1&rel=0&modestbranding=1&iv_load_policy=3&fs=0&enablejsapi=1&origin=https://www.youtube-nocookie.com"
                     referrerpolicy="strict-origin-when-cross-origin"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                     allowfullscreen>
                 </iframe>
             </div>

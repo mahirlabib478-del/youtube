@@ -241,7 +241,14 @@ private fun YouTubeApp() {
                     val freshVideos = successfulPages.flatMap { it.videos }
                     // Preserve cached items only for channels that failed this refresh.
                     val cachedFailedChannelVideos = approvedVideos.filter { it.channelId in failedIds }
-                    val merged = balanceVideosAcrossChannels(freshVideos + cachedFailedChannelVideos)
+                    val refreshedVideos = refreshBalancedVideos(
+                        freshVideos = freshVideos,
+                        previousVideos = approvedVideos,
+                        rotationStep = feedRefreshVersion + 1
+                    )
+                    val merged = balanceVideosAcrossChannels(
+                        refreshedVideos + cachedFailedChannelVideos
+                    )
                     if (merged.isNotEmpty() || failedIds.isEmpty()) {
                         approvedVideos = merged
                         LocalVideoStore.save(context, merged)

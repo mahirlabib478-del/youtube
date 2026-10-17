@@ -41,6 +41,34 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun subscribedFeedSortsNewestFirstAcrossChannelsAndDeduplicates() {
+        val videos = listOf(
+            YouTubeVideo("older-a", "Older A", "Channel A", "2025-01-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("newest-b", "Newest B", "Channel B", "2025-03-01T10:00:00Z", channelId = "B"),
+            YouTubeVideo("middle-a", "Middle A", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("newest-b", "Duplicate newest B", "Channel B", "2025-03-01T10:00:00Z", channelId = "B")
+        )
+
+        val sorted = sortVideosNewestFirst(videos)
+
+        assertEquals(listOf("newest-b", "middle-a", "older-a"), sorted.map { it.videoId })
+        assertEquals(listOf("B", "A", "A"), sorted.map { it.channelId })
+    }
+
+    @Test
+    fun subscribedFeedSortKeepsStableOrderForEqualTimestamps() {
+        val videos = listOf(
+            YouTubeVideo("video-z", "Z", "Channel Z", "2025-01-01T10:00:00Z"),
+            YouTubeVideo("video-a", "A", "Channel A", "2025-01-01T10:00:00Z")
+        )
+
+        assertEquals(
+            listOf("video-a", "video-z"),
+            sortVideosNewestFirst(videos).map { it.videoId }
+        )
+    }
+
+    @Test
     fun formatRelativeTimeHandlesEmptyGracefully() {
         assertEquals("", formatRelativeTime(""))
     }

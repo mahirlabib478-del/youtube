@@ -31,6 +31,12 @@ data class YouTubeVideo(
     val viewCount: String = ""
 )
 
+// YouTube API publication timestamps are ISO-8601 UTC strings, so descending
+// lexical order matches publication-time order for valid API values.
+internal fun sortVideosNewestFirst(videos: List<YouTubeVideo>): List<YouTubeVideo> =
+    videos.distinctBy { it.videoId }
+        .sortedWith(compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId })
+
 data class YouTubeComment(
     val author: String,
     val text: String,

@@ -381,11 +381,12 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
             <script>
                 var iframe = document.getElementById('yt-embed');
-                var isActuallyPlaying = false;
+                var wasPlaying = true;
                 var debounceTimer = null;
+                var pauseTimeout = null;
 
                 function safeResumePlayback() {
-                    if (!isActuallyPlaying) return;
+                    if (!wasPlaying) return;
                     try {
                         if (iframe && iframe.contentWindow) {
                             iframe.contentWindow.postMessage(JSON.stringify({
@@ -399,18 +400,24 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
 
                 window.safeResumePlayback = safeResumePlayback;
 
-                // Listen for YouTube player state changes to know whether video is really playing
+                // Listen for YouTube player state changes to know whether video was playing
                 window.addEventListener('message', function(event) {
                     try {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                         if (data && data.event === 'infoDelivery' && data.info) {
                             var state = data.info.playerState;
-                            if (state === 1) {
-                                isActuallyPlaying = true;
-                            } else if (state === 2) {
-                                isActuallyPlaying = false;
-                            } else if (state === 0) {
-                                isActuallyPlaying = false;
+                            if (state === 1) { // 1 = PLAYING
+                                wasPlaying = true;
+                                clearTimeout(pauseTimeout);
+                            } else if (state === 2) { // 2 = PAUSED
+                                // Delay clearing wasPlaying so orientation change pauses don't disable auto-resume
+                                clearTimeout(pauseTimeout);
+                                pauseTimeout = setTimeout(function() {
+                                    wasPlaying = false;
+                                }, 800);
+                            } else if (state === 0) { // 0 = ENDED
+                                wasPlaying = false;
+                                clearTimeout(pauseTimeout);
                                 if (iframe && iframe.contentWindow) {
                                     iframe.contentWindow.postMessage(JSON.stringify({
                                         event: 'command',
@@ -431,18 +438,18 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                 // Debounced resume playback when screen orientation or window size changes while playing
                 window.addEventListener('resize', function() {
                     clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(safeResumePlayback, 250);
+                    debounceTimer = setTimeout(safeResumePlayback, 300);
                 });
 
                 window.addEventListener('focus', function() {
                     clearTimeout(debounceTimer);
-                    debounceTimer = setTimeout(safeResumePlayback, 250);
+                    debounceTimer = setTimeout(safeResumePlayback, 300);
                 });
 
                 document.addEventListener('visibilitychange', function() {
                     if (!document.hidden) {
                         clearTimeout(debounceTimer);
-                        debounceTimer = setTimeout(safeResumePlayback, 250);
+                        debounceTimer = setTimeout(safeResumePlayback, 300);
                     }
                 });
             </script>

@@ -177,6 +177,8 @@ fun PlayerScreen(
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
+        delay(350)
+        resumeTrigger++
     }
 
     DisposableEffect(activity, videoId) {

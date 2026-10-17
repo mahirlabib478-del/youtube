@@ -607,6 +607,40 @@ private fun YouTubeApp() {
                                 isMiniPlayer = true
                                 openChannel(chId, chTitle, chAvatar)
                             },
+                            onSubscriptionChanged = { video, subscribed ->
+                                val channelId = video.channelId.ifBlank {
+                                    approvedVideos.find {
+                                        it.channelTitle.equals(video.channelTitle, ignoreCase = true)
+                                    }?.channelId ?: ApprovedChannelStore.DEFAULT_CHANNELS.find {
+                                        it.title.equals(video.channelTitle, ignoreCase = true)
+                                    }?.channelId.orEmpty()
+                                }
+                                if (channelId.isNotBlank()) {
+                                    if (subscribed) {
+                                        ApprovedChannelStore.add(
+                                            context, channelId, video.channelTitle, video.channelAvatarUrl
+                                        )
+                                    } else {
+                                        ApprovedChannelStore.remove(context, channelId)
+                                        val remainingVideos = approvedVideos.filterNot {
+                                            it.channelId == channelId ||
+                                                it.channelTitle.equals(video.channelTitle, ignoreCase = true)
+                                        }
+                                        approvedVideos = remainingVideos
+                                        LocalVideoStore.save(context, remainingVideos)
+                                        feedPageTokens = feedPageTokens - channelId
+                                        feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() }
+                                    }
+                                    channelListRefreshKey++
+                                    refreshFeed()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Couldn't identify this channel. Open its channel page and try again.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
                             miniMode = isMiniPlayer,
                             modifier = if (isMiniPlayer) {
                                 Modifier.align(Alignment.BottomEnd).padding(

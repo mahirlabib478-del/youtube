@@ -246,7 +246,7 @@ private fun YouTubeApp() {
                         previousVideos = approvedVideos,
                         rotationStep = feedRefreshVersion + 1
                     )
-                    val merged = balanceVideosAcrossChannels(
+                    val merged = interleaveChannelQueuesPreservingOrder(
                         refreshedVideos + cachedFailedChannelVideos
                     )
                     if (merged.isNotEmpty() || failedIds.isEmpty()) {

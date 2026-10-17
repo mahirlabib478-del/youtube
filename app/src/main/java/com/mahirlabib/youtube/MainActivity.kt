@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -77,6 +78,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 object ThemeStore {
@@ -121,6 +125,10 @@ private fun YouTubeApp() {
     var lastHomeTapTime by remember { mutableLongStateOf(0L) }
     var activeVideo by remember { mutableStateOf<YouTubeVideo?>(null) }
     var isMiniPlayer by remember { mutableStateOf(false) }
+    // Hoist feed scroll position above the player/feed branch so closing the mini player
+    // does not recreate HomeFeed at the top of the list.
+    val homeFeedListState = rememberLazyListState()
+
     var selectedChannel by remember { mutableStateOf<ChannelDetailState?>(null) }
 
     var history by remember(context) { mutableStateOf(WatchHistoryStore.load(context)) }
@@ -129,8 +137,17 @@ private fun YouTubeApp() {
     var isFeedLoadingMore by remember { mutableStateOf(false) }
     var feedErrorMessage by remember { mutableStateOf<String?>(null) }
     var feedPageTokens by remember { mutableStateOf<Map<String, String?>>(emptyMap()) }
+    var feedFailedChannelIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var feedHasMore by remember { mutableStateOf(false) }
     var feedRefreshVersion by remember { mutableIntStateOf(0) }
+
+    // Keep refresh-triggered scroll reset outside HomeFeed so toggling the mini-player
+    // cannot re-run it when the feed composable is re-created.
+    LaunchedEffect(feedRefreshVersion) {
+        if (feedRefreshVersion > 0) {
+            homeFeedListState.scrollToItem(0)
+        }
+    }
     var channelListRefreshKey by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
 
@@ -203,24 +220,8 @@ private fun YouTubeApp() {
         previousChannelId: String = "",
         reshuffle: Boolean = false
     ): List<YouTubeVideo> {
-        // A refresh often returns the exact same newest uploads. Reorder the fetched
-        // candidates so refresh is visible even when no channel has published a new video.
-        // Keep pagination pages in their original order; only the refresh's first batch
-        // is shuffled, while round-robin mixing still avoids consecutive same-channel items.
-        val queues = pages.map { page ->
-            val unique = page.distinctBy { it.videoId }
-            ArrayDeque(if (reshuffle) unique.shuffled() else unique)
-        }.filter { it.isNotEmpty() }
-        val mixed = mutableListOf<YouTubeVideo>()
-        var previousChannel = previousChannelId
-        while (queues.any { it.isNotEmpty() }) {
-            val candidates = queues.filter { it.isNotEmpty() }
-            val nextQueue = candidates.firstOrNull { it.first().channelId != previousChannel } ?: candidates.firstOrNull()
-            val next = nextQueue?.removeFirst() ?: break
-            mixed += next
-            previousChannel = next.channelId
-        }
-        return mixed.distinctBy { it.videoId }
+        // Balance the first screen across channels while keeping each channel newest-first.
+        return balanceVideosAcrossChannels(pages.flatten())
     }
 
     fun refreshFeed() {
@@ -229,42 +230,64 @@ private fun YouTubeApp() {
             isFeedLoading = true
             try {
                 feedErrorMessage = null
-                runCatching {
                 val channels = ApprovedChannelStore.load(context)
                 if (channels.isEmpty()) {
-                    Triple(emptyList<YouTubeVideo>(), emptyMap<String, String?>(), 0)
+                    approvedVideos = emptyList()
+                    LocalVideoStore.save(context, emptyList())
+                    feedPageTokens = emptyMap()
+                    feedFailedChannelIds = emptySet()
+                    feedHasMore = false
                 } else {
-                    val pages = channels.mapNotNull { channel ->
-                        runCatching {
-                            channel to YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
-                        }.getOrNull()
+                    // Fetch channel first pages concurrently so a slow channel does not
+                    // delay every other subscribed channel from appearing in the feed.
+                    val results = coroutineScope {
+                        channels.map { channel ->
+                            async {
+                                channel to runCatching {
+                                    YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
+                                }
+                            }
+                        }.awaitAll()
                     }
-                    val mixed = mixChannelVideos(
-                        pages.map { it.second.videos },
-                        reshuffle = true
+                    val successfulPages = results.mapNotNull { (_, result) -> result.getOrNull() }
+                    val failedIds = results.filter { it.second.isFailure }.map { it.first.channelId }.toSet()
+                    val freshVideos = successfulPages.flatMap { it.videos }
+                    // Preserve cached items only for channels that failed this refresh.
+                    val cachedFailedChannelVideos = approvedVideos.filter { it.channelId in failedIds }
+                    val refreshedVideos = refreshBalancedVideos(
+                        freshVideos = freshVideos,
+                        previousVideos = approvedVideos,
+                        rotationStep = feedRefreshVersion + 1
                     )
-                    val refreshedTokens = pages.associate { (channel, page) -> channel.channelId to page.continuationToken }
-                    // Keep retry tokens for channels that failed, but discard tokens for
-                    // channels that were removed from the approved-channel list.
-                    val activeTokens = channels.associate { channel ->
-                        channel.channelId to (refreshedTokens[channel.channelId] ?: feedPageTokens[channel.channelId])
+                    val merged = interleaveChannelQueuesPreservingOrder(
+                        refreshedVideos + cachedFailedChannelVideos
+                    )
+                    if (merged.isNotEmpty() || failedIds.isEmpty()) {
+                        approvedVideos = merged
+                        LocalVideoStore.save(context, merged)
                     }
-                    Triple(mixed, activeTokens, channels.size - pages.size)
+                    val successfulTokens = results.mapNotNull { (channel, result) ->
+                        result.getOrNull()?.let { channel.channelId to it.continuationToken }
+                    }.toMap()
+                    feedPageTokens = channels.associate { channel ->
+                        channel.channelId to if (channel.channelId in successfulTokens) {
+                            successfulTokens[channel.channelId]
+                        } else {
+                            feedPageTokens[channel.channelId]
+                        }
+                    }
+                    feedFailedChannelIds = failedIds
+                    feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() } || failedIds.isNotEmpty()
+                    feedRefreshVersion++
+                    feedErrorMessage = if (failedIds.isNotEmpty()) {
+                        "Some subscribed channels couldn't refresh. They'll be retried while loading more."
+                    } else if (merged.isEmpty()) {
+                        "No public videos found for your saved channels."
+                    } else null
                 }
-            }.onSuccess { (videos, tokens, failedChannels) ->
-                if (videos.isNotEmpty()) {
-                    approvedVideos = videos
-                    LocalVideoStore.save(context, videos)
-                }
-                feedPageTokens = tokens
-                feedHasMore = tokens.values.any { !it.isNullOrBlank() }
-                feedRefreshVersion++
-                // Keep transient partial-channel failures quiet while videos remain visible.
-                feedErrorMessage = if (videos.isEmpty() && failedChannels > 0) "Couldn't refresh saved channels." else null
-            }.onFailure { err ->
-                // Keep cached feed visible without interruptive notices on transient failures.
-                feedErrorMessage = null
-                }
+            } catch (err: Exception) {
+                // Keep cached feed visible when a refresh fails globally.
+                feedErrorMessage = err.message ?: "Couldn't refresh subscribed channels."
             } finally {
                 isFeedLoading = false
             }
@@ -276,36 +299,59 @@ private fun YouTubeApp() {
         scope.launch {
             isFeedLoadingMore = true
             try {
-                runCatching {
                 val channels = ApprovedChannelStore.load(context)
-                val pageResults = channels.mapNotNull { channel ->
-                    val token = feedPageTokens[channel.channelId] ?: return@mapNotNull null
-                    runCatching {
-                        channel to YouTubeDataRepository.fetchChannelVideosPage(
-                            channelId = channel.channelId,
-                            channelAvatarUrl = channel.avatarUrl,
-                            continuationToken = token
-                        )
-                    }.getOrNull()
+                val attempted = coroutineScope {
+                    channels.mapNotNull { channel ->
+                        val retryFirstPage = channel.channelId in feedFailedChannelIds
+                        val token = feedPageTokens[channel.channelId]
+                        if (!retryFirstPage && token.isNullOrBlank()) return@mapNotNull null
+                        async {
+                            val result = runCatching {
+                                channel to YouTubeDataRepository.fetchChannelVideosPage(
+                                    channelId = channel.channelId,
+                                    channelAvatarUrl = channel.avatarUrl,
+                                    continuationToken = if (retryFirstPage) null else token
+                                )
+                            }
+                            channel.channelId to result
+                        }
+                    }.awaitAll()
                 }
+                val successes = attempted.mapNotNull { (_, result) -> result.getOrNull() }
+                val successfulIds = successes.map { it.first.channelId }.toSet()
+                val failedIds = attempted.filter { it.second.isFailure }.map { it.first }.toSet()
                 val nextTokens = feedPageTokens.toMutableMap()
-                pageResults.forEach { (channel, page) -> nextTokens[channel.channelId] = page.continuationToken }
-                val newVideos = mixChannelVideos(pageResults.map { it.second.videos }, approvedVideos.lastOrNull()?.channelId.orEmpty())
-                Triple(newVideos, nextTokens, pageResults.size < channels.count { !feedPageTokens[it.channelId].isNullOrBlank() })
-            }.onSuccess { (newVideos, nextTokens, hasFailedChannels) ->
-                val merged = (approvedVideos + newVideos).distinctBy { it.videoId }
+                successes.forEach { (channel, page) -> nextTokens[channel.channelId] = page.continuationToken }
+                // If a failed channel is retried from its first page, replace its stale
+                // cached entries with the current first page. Other channels are appended.
+                val retriedIds = successfulIds.intersect(feedFailedChannelIds)
+                val retainedVideos = approvedVideos.filterNot { it.channelId in retriedIds }
+                val merged = balanceVideosAcrossChannels(retainedVideos + successes.flatMap { it.second.videos })
                 approvedVideos = merged
                 LocalVideoStore.save(context, merged)
-                feedPageTokens = nextTokens
-                feedHasMore = nextTokens.values.any { !it.isNullOrBlank() }
-                feedErrorMessage = null
-            }.onFailure { err ->
-                feedErrorMessage = null
+                feedPageTokens = channels.associate { channel ->
+                    channel.channelId to if (channel.channelId in successfulIds) {
+                        nextTokens[channel.channelId]
+                    } else {
+                        feedPageTokens[channel.channelId]
+                    }
                 }
+                feedFailedChannelIds = (feedFailedChannelIds - successfulIds) + failedIds
+                feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() } || feedFailedChannelIds.isNotEmpty()
+                feedErrorMessage = if (feedFailedChannelIds.isNotEmpty()) {
+                    "Some subscribed channels are still unavailable. Scroll to retry."
+                } else null
+            } catch (err: Exception) {
+                feedErrorMessage = err.message ?: "Couldn't load more subscribed videos."
             } finally {
                 isFeedLoadingMore = false
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        // Load cached videos immediately, then refresh subscribed channels on startup.
+        refreshFeed()
     }
 
     // Device Back Navigation handler
@@ -559,6 +605,7 @@ private fun YouTubeApp() {
                                     onPlayVideo = { playVideo(it) }, onRefresh = { refreshFeed() },
                                     onLoadMore = { loadMoreFeed() }, isLoadingMore = isFeedLoadingMore,
                                     refreshVersion = feedRefreshVersion,
+                                    feedListState = homeFeedListState,
                                     onOpenChannel = { chId, chTitle, chAvatar -> openChannel(chId, chTitle, chAvatar) }
                                 )
                                 1 -> ChannelManagerScreen(
@@ -664,6 +711,7 @@ private fun YouTubeApp() {
                         onLoadMore = { loadMoreFeed() },
                         isLoadingMore = isFeedLoadingMore,
                         refreshVersion = feedRefreshVersion,
+                                    feedListState = homeFeedListState,
                         onOpenChannel = { chId, chTitle, chAvatar ->
                             openChannel(chId, chTitle, chAvatar)
                         }

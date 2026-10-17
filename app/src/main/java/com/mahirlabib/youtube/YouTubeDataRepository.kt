@@ -31,6 +31,105 @@ data class YouTubeVideo(
     val viewCount: String = ""
 )
 
+// YouTube API publication timestamps are ISO-8601 UTC strings, so descending
+// lexical order matches publication-time order for valid API values.
+internal fun sortVideosNewestFirst(videos: List<YouTubeVideo>): List<YouTubeVideo> =
+    videos.distinctBy { it.videoId }
+        .sortedWith(compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId })
+
+/**
+ * Keeps the Subscriptions feed balanced: show one newest video from each channel
+ * before showing a channel's second video. Channel priority is based on each
+ * channel's newest upload, while each channel's own videos remain newest-first.
+ */
+/**
+ * Refresh behavior: when a channel has no unseen uploads, rotate its current
+ * first-page candidates so manual refresh is visibly useful. If new uploads
+ * exist, keep that channel newest-first so newly published videos stay on top.
+ */
+internal fun interleaveChannelQueuesPreservingOrder(videos: List<YouTubeVideo>): List<YouTubeVideo> {
+    val perChannel = videos.distinctBy { it.videoId }
+        .groupBy { video ->
+            video.channelId.ifBlank { video.channelTitle.ifBlank { video.videoId } }
+        }
+    val channelOrder = perChannel.keys.sortedWith(
+        compareByDescending<String> { key -> perChannel[key].orEmpty().firstOrNull()?.publishedAt.orEmpty() }
+            .thenBy { it }
+    )
+    val result = mutableListOf<YouTubeVideo>()
+    var index = 0
+    while (true) {
+        var added = false
+        for (channelKey in channelOrder) {
+            val video = perChannel[channelKey]?.getOrNull(index) ?: continue
+            result += video
+            added = true
+        }
+        if (!added) break
+        index++
+    }
+    return result
+}
+
+internal fun refreshBalancedVideos(
+    freshVideos: List<YouTubeVideo>,
+    previousVideos: List<YouTubeVideo>,
+    rotationStep: Int
+): List<YouTubeVideo> {
+    val previousIdsByChannel = previousVideos.groupBy {
+        it.channelId.ifBlank { it.channelTitle.ifBlank { it.videoId } }
+    }.mapValues { (_, items) -> items.map { it.videoId }.toSet() }
+
+    val rotated = freshVideos.distinctBy { it.videoId }
+        .groupBy { it.channelId.ifBlank { it.channelTitle.ifBlank { it.videoId } } }
+        .values
+        .flatMap { channelVideos ->
+            val newestFirst = channelVideos.sortedWith(
+                compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId }
+            )
+            val key = newestFirst.firstOrNull()?.let {
+                it.channelId.ifBlank { it.channelTitle.ifBlank { it.videoId } }
+            }.orEmpty()
+            val hasNewUploads = newestFirst.any { it.videoId !in previousIdsByChannel[key].orEmpty() }
+            if (hasNewUploads || newestFirst.size < 2) newestFirst
+            else {
+                val offset = Math.floorMod(rotationStep, newestFirst.size)
+                newestFirst.drop(offset) + newestFirst.take(offset)
+            }
+        }
+    return interleaveChannelQueuesPreservingOrder(rotated)
+}
+
+internal fun balanceVideosAcrossChannels(videos: List<YouTubeVideo>): List<YouTubeVideo> {
+    val perChannel = videos.distinctBy { it.videoId }
+        .groupBy { video ->
+            video.channelId.ifBlank { video.channelTitle.ifBlank { video.videoId } }
+        }
+        .mapValues { (_, channelVideos) ->
+            channelVideos.sortedWith(
+                compareByDescending<YouTubeVideo> { it.publishedAt }.thenBy { it.videoId }
+            )
+        }
+
+    val channelOrder = perChannel.keys.sortedWith(
+        compareByDescending<String> { key -> perChannel[key].orEmpty().firstOrNull()?.publishedAt.orEmpty() }
+            .thenBy { it }
+    )
+    val result = ArrayList<YouTubeVideo>(videos.size)
+    var index = 0
+    while (true) {
+        var addedAtThisRound = false
+        for (channelKey in channelOrder) {
+            val video = perChannel[channelKey]?.getOrNull(index) ?: continue
+            result += video
+            addedAtThisRound = true
+        }
+        if (!addedAtThisRound) break
+        index++
+    }
+    return result
+}
+
 data class YouTubeComment(
     val author: String,
     val text: String,

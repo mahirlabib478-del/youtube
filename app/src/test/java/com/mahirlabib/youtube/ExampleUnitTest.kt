@@ -41,6 +41,51 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun subscribedFeedSortsNewestFirstAcrossChannelsAndDeduplicates() {
+        val videos = listOf(
+            YouTubeVideo("older-a", "Older A", "Channel A", "2025-01-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("newest-b", "Newest B", "Channel B", "2025-03-01T10:00:00Z", channelId = "B"),
+            YouTubeVideo("middle-a", "Middle A", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("newest-b", "Duplicate newest B", "Channel B", "2025-03-01T10:00:00Z", channelId = "B")
+        )
+
+        val sorted = sortVideosNewestFirst(videos)
+
+        assertEquals(listOf("newest-b", "middle-a", "older-a"), sorted.map { it.videoId })
+        assertEquals(listOf("B", "A", "A"), sorted.map { it.channelId })
+    }
+
+    @Test
+    fun subscribedFeedBalancesChannelsBeforeShowingSecondVideoFromAnyChannel() {
+        val videos = listOf(
+            YouTubeVideo("a-new", "A newest", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-mid", "A middle", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-01-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-new", "B newest", "Channel B", "2025-02-20T10:00:00Z", channelId = "B"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2024-12-01T10:00:00Z", channelId = "B"),
+            YouTubeVideo("c-new", "C newest", "Channel C", "2025-02-10T10:00:00Z", channelId = "C")
+        )
+
+        val balanced = balanceVideosAcrossChannels(videos)
+
+        assertEquals(listOf("A", "B", "C", "A", "B", "A"), balanced.map { it.channelId })
+        assertEquals(listOf("a-new", "b-new", "c-new", "a-mid", "b-old", "a-old"), balanced.map { it.videoId })
+    }
+
+    @Test
+    fun subscribedFeedSortKeepsStableOrderForEqualTimestamps() {
+        val videos = listOf(
+            YouTubeVideo("video-z", "Z", "Channel Z", "2025-01-01T10:00:00Z"),
+            YouTubeVideo("video-a", "A", "Channel A", "2025-01-01T10:00:00Z")
+        )
+
+        assertEquals(
+            listOf("video-a", "video-z"),
+            sortVideosNewestFirst(videos).map { it.videoId }
+        )
+    }
+
+    @Test
     fun formatRelativeTimeHandlesEmptyGracefully() {
         assertEquals("", formatRelativeTime(""))
     }
@@ -101,5 +146,37 @@ class ExampleUnitTest {
         val title = titleRegex.find(match.value)?.groupValues?.getOrNull(1)
         assertEquals("M7lc1UVf-VE", vid)
         assertEquals("Sample Video Title", title)
+    }
+
+    @Test
+    fun refreshRotatesUnchangedChannelVideosButKeepsChannelBalance() {
+        val videos = listOf(
+            YouTubeVideo("a-new", "A newest", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-new", "B newest", "Channel B", "2025-02-20T10:00:00Z", channelId = "B"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2025-01-01T10:00:00Z", channelId = "B")
+        )
+
+        val refreshed = refreshBalancedVideos(videos, videos, rotationStep = 1)
+
+        assertEquals(listOf("a-old", "b-old", "a-new", "b-new"), refreshed.map { it.videoId })
+        assertEquals(listOf("A", "B", "A", "B"), refreshed.map { it.channelId })
+    }
+
+    @Test
+    fun refreshKeepsNewUploadsAtTopInsteadOfRotatingThatChannel() {
+        val previous = listOf(
+            YouTubeVideo("a-old", "A old", "Channel A", "2025-02-01T10:00:00Z", channelId = "A"),
+            YouTubeVideo("b-old", "B old", "Channel B", "2025-01-01T10:00:00Z", channelId = "B")
+        )
+        val fresh = listOf(
+            YouTubeVideo("a-new", "A new", "Channel A", "2025-03-01T10:00:00Z", channelId = "A"),
+            previous[0],
+            previous[1]
+        )
+
+        val refreshed = refreshBalancedVideos(fresh, previous, rotationStep = 1)
+
+        assertEquals("a-new", refreshed.first { it.channelId == "A" }.videoId)
     }
 }

@@ -314,7 +314,12 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     autoplay = true,
                     onShowCustomView = onShowCustomView,
-                    onHideCustomView = onHideCustomView
+                    onHideCustomView = onHideCustomView,
+                    onPlayerTap = {
+                        if (isFullscreenExpanded) {
+                            isFullscreenControlsVisible = true
+                        }
+                    }
                 )
                 if (miniMode) {
                     // Transparent tap target and close control sit above the same WebView.
@@ -335,18 +340,8 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded) {
-                    // Tap detector overlay to toggle controls visibility
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clickable(
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() }
-                            ) {
-                                isFullscreenControlsVisible = !isFullscreenControlsVisible
-                            }
-                    )
-
+                    // Keep the WebView interactive; fullscreen tap detection is handled
+                    // by its touch listener and never by a Compose layer above the player.
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isFullscreenControlsVisible,
                         enter = fadeIn(animationSpec = tween(200)),

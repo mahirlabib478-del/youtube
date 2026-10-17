@@ -44,13 +44,13 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           if [ ! -f .env.example ]; then
-            printf 'YOUTUBE_API_KEY=your_api_key_here\\n' > .env.example
+            printf '%s\n' 'YOUTUBE_API_KEY=your_api_key_here' > .env.example
           fi
           if [ -n "$YOUTUBE_API_KEY" ]; then
-            printf 'YOUTUBE_API_KEY=%s\\n' "$YOUTUBE_API_KEY" > .env
+            printf 'YOUTUBE_API_KEY=%s\n' "$YOUTUBE_API_KEY" > .env
           else
             echo 'YOUTUBE_API_KEY secret is not configured; API-backed features may be unavailable.'
-            printf 'YOUTUBE_API_KEY=your_api_key_here\\n' > .env
+            printf '%s\n' 'YOUTUBE_API_KEY=your_api_key_here' > .env
           fi
 
       - name: Run unit tests and assemble debug APK

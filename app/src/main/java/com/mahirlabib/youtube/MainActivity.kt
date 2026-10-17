@@ -242,7 +242,11 @@ private fun YouTubeApp() {
                         result.getOrNull()?.let { channel.channelId to it.continuationToken }
                     }.toMap()
                     feedPageTokens = channels.associate { channel ->
-                        channel.channelId to (successfulTokens[channel.channelId] ?: feedPageTokens[channel.channelId])
+                        channel.channelId to if (channel.channelId in successfulTokens) {
+                            successfulTokens[channel.channelId]
+                        } else {
+                            feedPageTokens[channel.channelId]
+                        }
                     }
                     feedFailedChannelIds = failedIds
                     feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() } || failedIds.isNotEmpty()
@@ -294,7 +298,11 @@ private fun YouTubeApp() {
                 approvedVideos = merged
                 LocalVideoStore.save(context, merged)
                 feedPageTokens = channels.associate { channel ->
-                    channel.channelId to (nextTokens[channel.channelId] ?: feedPageTokens[channel.channelId])
+                    channel.channelId to if (channel.channelId in successfulIds) {
+                        nextTokens[channel.channelId]
+                    } else {
+                        feedPageTokens[channel.channelId]
+                    }
                 }
                 feedFailedChannelIds = (feedFailedChannelIds - successfulIds) + failedIds
                 feedHasMore = feedPageTokens.values.any { !it.isNullOrBlank() } || feedFailedChannelIds.isNotEmpty()

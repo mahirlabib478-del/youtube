@@ -77,6 +77,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 object ThemeStore {
@@ -222,10 +225,16 @@ private fun YouTubeApp() {
                     feedFailedChannelIds = emptySet()
                     feedHasMore = false
                 } else {
-                    val results = channels.map { channel ->
-                        channel to runCatching {
-                            YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
-                        }
+                    // Fetch channel first pages concurrently so a slow channel does not
+                    // delay every other subscribed channel from appearing in the feed.
+                    val results = coroutineScope {
+                        channels.map { channel ->
+                            async {
+                                channel to runCatching {
+                                    YouTubeDataRepository.fetchChannelVideosPage(channel.channelId, channel.avatarUrl)
+                                }
+                            }
+                        }.awaitAll()
                     }
                     val successfulPages = results.mapNotNull { (_, result) -> result.getOrNull() }
                     val failedIds = results.filter { it.second.isFailure }.map { it.first.channelId }.toSet()
@@ -271,18 +280,22 @@ private fun YouTubeApp() {
             isFeedLoadingMore = true
             try {
                 val channels = ApprovedChannelStore.load(context)
-                val attempted = channels.mapNotNull { channel ->
-                    val retryFirstPage = channel.channelId in feedFailedChannelIds
-                    val token = feedPageTokens[channel.channelId]
-                    if (!retryFirstPage && token.isNullOrBlank()) return@mapNotNull null
-                    val result = runCatching {
-                        channel to YouTubeDataRepository.fetchChannelVideosPage(
-                            channelId = channel.channelId,
-                            channelAvatarUrl = channel.avatarUrl,
-                            continuationToken = if (retryFirstPage) null else token
-                        )
-                    }
-                    channel.channelId to result
+                val attempted = coroutineScope {
+                    channels.mapNotNull { channel ->
+                        val retryFirstPage = channel.channelId in feedFailedChannelIds
+                        val token = feedPageTokens[channel.channelId]
+                        if (!retryFirstPage && token.isNullOrBlank()) return@mapNotNull null
+                        async {
+                            val result = runCatching {
+                                channel to YouTubeDataRepository.fetchChannelVideosPage(
+                                    channelId = channel.channelId,
+                                    channelAvatarUrl = channel.avatarUrl,
+                                    continuationToken = if (retryFirstPage) null else token
+                                )
+                            }
+                            channel.channelId to result
+                        }
+                    }.awaitAll()
                 }
                 val successes = attempted.mapNotNull { (_, result) -> result.getOrNull() }
                 val successfulIds = successes.map { it.first.channelId }.toSet()

@@ -88,6 +88,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -97,6 +98,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -167,11 +169,36 @@ fun PlayerScreen(
         }
     }
 
+    val enterFullscreen: () -> Unit = {
+        isFullscreenExpanded = true
+        resumeTrigger++
+        showControls = true
+    }
+
+    var lastInteractionTime by remember { mutableLongStateOf(0L) }
+    val toggleControls = {
+        val now = System.currentTimeMillis()
+        if (now - lastInteractionTime > 250) {
+            lastInteractionTime = now
+            showControls = !showControls
+        }
+    }
+
     // Auto-hide controls after 3.5 seconds of inactivity
     LaunchedEffect(showControls) {
         if (showControls) {
             delay(3500)
             showControls = false
+        }
+    }
+
+    // 1:1 synchronization with YouTube player's touch interaction
+    DisposableEffect(videoId) {
+        SharedPlayerManager.onUserInteraction = {
+            toggleControls()
+        }
+        onDispose {
+            SharedPlayerManager.onUserInteraction = null
         }
     }
 
@@ -403,7 +430,7 @@ fun PlayerScreen(
                                     val down = awaitFirstDown(pass = PointerEventPass.Initial)
                                     val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
                                     if (up != null) {
-                                        showControls = !showControls
+                                        toggleControls()
                                     }
                                 }
                             } else {
@@ -415,7 +442,7 @@ fun PlayerScreen(
                                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                                         if (!change.pressed) {
                                             if (!hasSwipedDown) {
-                                                showControls = !showControls
+                                                toggleControls()
                                             }
                                             break
                                         }
@@ -492,7 +519,60 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded || customFullscreenView != null) {
-
+                    // Fullscreen Top Bar: Back button, Video title, and Channel title
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showControls,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(220)),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xCC000000), Color.Transparent)
+                                    )
+                                )
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = exitFullscreen,
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .background(Color(0x66000000), CircleShape)
+                                    .testTag("fullscreen_top_back_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Exit Fullscreen",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = video.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = video.channelTitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
 
                     // Bottom-right floating exit button when fullscreen controls are revealed
                     androidx.compose.animation.AnimatedVisibility(
@@ -553,10 +633,7 @@ fun PlayerScreen(
                         modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
                         IconButton(
-                            onClick = {
-                                isFullscreenExpanded = true
-                                resumeTrigger++
-                            },
+                            onClick = enterFullscreen,
                             modifier = Modifier
                                 .padding(8.dp)
                                 .size(42.dp)

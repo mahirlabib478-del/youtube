@@ -4,7 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -38,26 +41,41 @@ object SharedPlayerManager {
     var isControlsVisible by mutableStateOf(false)
     var playbackError by mutableStateOf<String?>(null)
 
+    // User interaction callback for 1:1 control synchronization
+    var onUserInteraction: (() -> Unit)? = null
+
     // Fullscreen callbacks
     var onShowCustomViewCallback: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null
     var onHideCustomViewCallback: (() -> Unit)? = null
 
     private class Bridge(
         val onControlsChange: (Boolean) -> Unit,
-        val onStateChange: (Boolean) -> Unit
+        val onStateChange: (Boolean) -> Unit,
+        val onInteraction: () -> Unit
     ) {
         @JavascriptInterface
         fun controlsVisibility(visible: Boolean) {
-            onControlsChange(visible)
+            Handler(Looper.getMainLooper()).post {
+                onControlsChange(visible)
+            }
         }
 
         @JavascriptInterface
         fun onPlayerStateChanged(playing: Boolean) {
-            onStateChange(playing)
+            Handler(Looper.getMainLooper()).post {
+                onStateChange(playing)
+            }
+        }
+
+        @JavascriptInterface
+        fun onUserTapped() {
+            Handler(Looper.getMainLooper()).post {
+                onInteraction()
+            }
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     fun getOrCreateWebView(context: Context): WebView {
         sharedWebView?.let { return it }
 
@@ -72,12 +90,22 @@ object SharedPlayerManager {
             )
             setBackgroundColor(AndroidColor.BLACK)
 
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    onUserInteraction?.invoke()
+                }
+                false
+            }
+
             addJavascriptInterface(
                 Bridge(
                     onControlsChange = { visible -> isControlsVisible = visible },
                     onStateChange = { playing ->
                         isPlaying = playing
                         BackgroundAudioState.isPlaying = playing
+                    },
+                    onInteraction = {
+                        onUserInteraction?.invoke()
                     }
                 ),
                 "AndroidBridge"
@@ -317,24 +345,13 @@ object SharedPlayerManager {
                     var wasPlaying = true;
                     var userWantsPlay = true;
 
-                    function notifyControlsVisible(visible) {
-                        try { AndroidBridge.controlsVisibility(visible); } catch (e) {}
+                    function notifyInteraction() {
+                        try { AndroidBridge.onUserTapped(); } catch(e) {}
                     }
 
-                    function evaluateControlsVisibility() {
-                        var selectors = ['.ytp-chrome-controls', '.ytp-chrome-top', '.ytp-chrome-bottom', '.ytp-progress-bar-container'];
-                        var visible = false;
-                        for (var i = 0; i < selectors.length; i++) {
-                            var el = document.querySelector(selectors[i]);
-                            if (!el) continue;
-                            var style = window.getComputedStyle(el);
-                            if (style && style.visibility !== 'hidden' && style.opacity !== '0' && el.offsetHeight > 0 && el.offsetWidth > 0) {
-                                visible = true;
-                                break;
-                            }
-                        }
-                        notifyControlsVisible(visible);
-                    }
+                    window.addEventListener('touchstart', notifyInteraction, { passive: true });
+                    window.addEventListener('click', notifyInteraction, { passive: true });
+                    window.addEventListener('pointerup', notifyInteraction, { passive: true });
 
                     function safeResumePlayback(force) {
                         if (!userWantsPlay) return;
@@ -356,6 +373,7 @@ object SharedPlayerManager {
                         try {
                             var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                             if (data && data.event === 'infoDelivery' && data.info) {
+                                notifyInteraction();
                                 var state = data.info.playerState;
                                 if (state === 1) {
                                     wasPlaying = true;
@@ -369,8 +387,6 @@ object SharedPlayerManager {
                             }
                         } catch(e) {}
                     });
-
-                    setInterval(evaluateControlsVisibility, 300);
                 </script>
             </body>
             </html>

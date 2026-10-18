@@ -115,6 +115,34 @@ class MainActivity : ComponentActivity() {
             YouTubeApp()
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        // Unified continuous flow: When user leaves the app, seamlessly continue playback
+        // using the exact same shared player in Floating Window (Idea 1) if overlay permission is granted,
+        // or background audio service otherwise.
+        val video = SharedPlayerManager.currentVideo
+        if (video != null && SharedPlayerManager.isPlaying) {
+            SharedPlayerManager.detachFromContainer()
+            if (OverlayPermissionHelper.hasPermission(this)) {
+                FloatingPlayerService.start(this, video.videoId, video.title, video.channelTitle)
+            } else {
+                BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // When returning to the app, dismiss the floating overlay or background notification
+        // so the in-app presentation resumes seamlessly at the exact same millisecond.
+        if (FloatingPlayerState.isRunning) {
+            FloatingPlayerService.stop(this)
+        }
+        if (BackgroundAudioState.isRunning) {
+            BackgroundAudioService.stop(this)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -153,6 +181,14 @@ private fun YouTubeApp() {
     }
     var channelListRefreshKey by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // Sync activeVideo when returning from floating window or background notification
+    LaunchedEffect(SharedPlayerManager.currentVideo) {
+        val current = SharedPlayerManager.currentVideo
+        if (current != null && (activeVideo == null || activeVideo?.videoId != current.videoId)) {
+            activeVideo = current
+        }
+    }
 
     val activity = context as? ComponentActivity
 
@@ -479,7 +515,7 @@ private fun YouTubeApp() {
                                     Spacer(Modifier.width(10.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = BackgroundAudioState.currentVideoTitle.ifBlank { "Background Audio" },
+                                            text = if (BackgroundAudioState.currentVideoTitle.isNotBlank()) BackgroundAudioState.currentVideoTitle else "Background Audio",
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,

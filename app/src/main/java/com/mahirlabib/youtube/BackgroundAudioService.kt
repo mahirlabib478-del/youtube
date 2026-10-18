@@ -1,6 +1,5 @@
 package com.mahirlabib.youtube
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,124 +11,55 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 
 /**
- * Observable state holder for background audio playback so Compose UI can react in real time.
- */
-object BackgroundAudioState {
-    var isRunning by mutableStateOf(false)
-    var isPlaying by mutableStateOf(false)
-    var currentVideoId by mutableStateOf<String?>(null)
-    var currentVideoTitle by mutableStateOf("")
-    var currentChannelTitle by mutableStateOf("")
-}
-
-/**
- * Foreground Service that plays YouTube audio via an offscreen WebView in the Service context.
- * Enables uninterrupted background playback even when the user minimizes the app,
- * locks the screen, or uses another application.
+ * Foreground Service that keeps playback active in the background and provides
+ * persistent notification controls (Play/Pause, Stop).
+ * Delegates directly to SharedPlayerManager to maintain a single continuous playback flow.
  */
 class BackgroundAudioService : Service() {
-
-    private var webView: WebView? = null
-    private var videoId: String = ""
-    private var videoTitle: String = ""
-    private var channelTitle: String = ""
-    private var isPlaying: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        initWebView()
-    }
-
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun initWebView() {
-        try {
-            webView = WebView(applicationContext).apply {
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    mediaPlaybackRequiresUserGesture = false
-                    loadsImagesAutomatically = true
-                    allowFileAccess = false
-                    allowContentAccess = false
-                    cacheMode = WebSettings.LOAD_DEFAULT
-                    val ua = userAgentString
-                    userAgentString = ua.replace("; wv", "").replace("Version/4.0 ", "")
-                }
-                val wv = this
-                CookieManager.getInstance().apply {
-                    setAcceptCookie(true)
-                    setAcceptThirdPartyCookies(wv, true)
-                }
-                webChromeClient = WebChromeClient()
-                webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                        if (request != null && !request.isForMainFrame) return false
-                        val url = request?.url?.toString().orEmpty()
-                        if (url.startsWith("https://www.youtube.com/embed") ||
-                            url.startsWith("https://www.youtube-nocookie.com/embed") ||
-                            url.startsWith("about:") ||
-                            url.startsWith("data:")
-                        ) return false
-                        return true
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("BackgroundAudioService", "Error initializing WebView", e)
-        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action ?: ACTION_START
         when (action) {
             ACTION_START -> {
-                val newVideoId = intent?.getStringExtra(EXTRA_VIDEO_ID).orEmpty()
-                val newTitle = intent?.getStringExtra(EXTRA_TITLE).orEmpty()
-                val newChannel = intent?.getStringExtra(EXTRA_CHANNEL).orEmpty()
+                val videoId = intent?.getStringExtra(EXTRA_VIDEO_ID)
+                    ?: SharedPlayerManager.currentVideo?.videoId.orEmpty()
+                val title = intent?.getStringExtra(EXTRA_TITLE)
+                    ?: SharedPlayerManager.currentVideo?.title.orEmpty()
+                val channel = intent?.getStringExtra(EXTRA_CHANNEL)
+                    ?: SharedPlayerManager.currentVideo?.channelTitle.orEmpty()
 
-                if (newVideoId.isNotBlank()) {
-                    val isDifferent = newVideoId != videoId
-                    videoId = newVideoId
-                    videoTitle = newTitle
-                    channelTitle = newChannel
-                    isPlaying = true
+                if (videoId.isNotBlank()) {
+                    BackgroundAudioState.isRunning = true
+                    BackgroundAudioState.isPlaying = SharedPlayerManager.isPlaying
+                    BackgroundAudioState.currentVideoId = videoId
+                    BackgroundAudioState.currentVideoTitle = title
+                    BackgroundAudioState.currentChannelTitle = channel
 
-                    updateSharedState()
                     startInForeground()
 
-                    if (isDifferent) {
-                        loadVideoInWebView(videoId)
-                    } else {
-                        resumePlayback()
+                    // Ensure ongoing playback without reloading
+                    if (!SharedPlayerManager.isPlaying) {
+                        SharedPlayerManager.resume()
                     }
                 }
             }
             ACTION_RESUME -> {
-                isPlaying = true
-                updateSharedState()
-                resumePlayback()
+                SharedPlayerManager.resume()
                 updateNotification()
             }
             ACTION_PAUSE -> {
-                isPlaying = false
-                updateSharedState()
-                pausePlayback()
+                SharedPlayerManager.pause()
                 updateNotification()
             }
             ACTION_STOP -> {
@@ -137,67 +67,6 @@ class BackgroundAudioService : Service() {
             }
         }
         return START_NOT_STICKY
-    }
-
-    private fun loadVideoInWebView(id: String) {
-        val htmlContent = """
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="utf-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                    body { margin:0; padding:0; background:#000; overflow:hidden; }
-                    iframe { width:100vw; height:100vh; border:none; }
-                </style>
-            </head>
-            <body>
-                <iframe id="yt-bg-embed"
-                    src="https://www.youtube-nocookie.com/embed/$id?autoplay=1&playsinline=1&controls=0&rel=0&enablejsapi=1&origin=https://www.youtube-nocookie.com"
-                    allow="autoplay; encrypted-media">
-                </iframe>
-            </body>
-            </html>
-        """.trimIndent()
-        webView?.loadDataWithBaseURL(
-            "https://www.youtube-nocookie.com",
-            htmlContent,
-            "text/html",
-            "UTF-8",
-            "https://www.youtube-nocookie.com"
-        )
-    }
-
-    private fun pausePlayback() {
-        val js = """
-            (function() {
-                var iframe = document.getElementById('yt-bg-embed');
-                if (iframe && iframe.contentWindow) {
-                    iframe.contentWindow.postMessage(JSON.stringify({
-                        event: 'command',
-                        func: 'pauseVideo',
-                        args: []
-                    }), '*');
-                }
-            })();
-        """.trimIndent()
-        webView?.evaluateJavascript(js, null)
-    }
-
-    private fun resumePlayback() {
-        val js = """
-            (function() {
-                var iframe = document.getElementById('yt-bg-embed');
-                if (iframe && iframe.contentWindow) {
-                    iframe.contentWindow.postMessage(JSON.stringify({
-                        event: 'command',
-                        func: 'playVideo',
-                        args: []
-                    }), '*');
-                }
-            })();
-        """.trimIndent()
-        webView?.evaluateJavascript(js, null)
     }
 
     private fun startInForeground() {
@@ -217,12 +86,17 @@ class BackgroundAudioService : Service() {
         }
     }
 
-    private fun updateNotification() {
+    fun updateNotification() {
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun buildNotification(): Notification {
+        val videoId = BackgroundAudioState.currentVideoId.orEmpty()
+        val videoTitle = BackgroundAudioState.currentVideoTitle
+        val channelTitle = BackgroundAudioState.currentChannelTitle
+        val isPlaying = SharedPlayerManager.isPlaying
+
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("active_video_id", videoId)
@@ -261,10 +135,13 @@ class BackgroundAudioService : Service() {
         }
         val playPauseTitle = if (isPlaying) "Pause" else "Play"
 
+        val displayTitle: CharSequence = if (videoTitle.isNotBlank()) videoTitle else "YouTube Audio"
+        val displayText: CharSequence = if (channelTitle.isNotBlank()) channelTitle else "Playing in background"
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_youtube_launcher)
-            .setContentTitle(videoTitle.ifBlank { "YouTube Audio" })
-            .setContentText(channelTitle.ifBlank { "Playing in background" })
+            .setContentTitle(displayTitle)
+            .setContentText(displayText)
             .setSubText("Background Audio")
             .setContentIntent(contentPendingIntent)
             .setOngoing(isPlaying)
@@ -289,28 +166,11 @@ class BackgroundAudioService : Service() {
         }
     }
 
-    private fun updateSharedState() {
-        BackgroundAudioState.isRunning = true
-        BackgroundAudioState.isPlaying = isPlaying
-        BackgroundAudioState.currentVideoId = videoId
-        BackgroundAudioState.currentVideoTitle = videoTitle
-        BackgroundAudioState.currentChannelTitle = channelTitle
-    }
-
     private fun stopPlaybackAndSelf() {
-        isPlaying = false
         BackgroundAudioState.isRunning = false
         BackgroundAudioState.isPlaying = false
         BackgroundAudioState.currentVideoId = null
-
-        try {
-            webView?.stopLoading()
-            webView?.loadUrl("about:blank")
-            webView?.destroy()
-        } catch (e: Exception) {
-            Log.w("BackgroundAudioService", "Error destroying webView", e)
-        }
-        webView = null
+        SharedPlayerManager.stop()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -322,7 +182,7 @@ class BackgroundAudioService : Service() {
     }
 
     override fun onDestroy() {
-        stopPlaybackAndSelf()
+        BackgroundAudioState.isRunning = false
         super.onDestroy()
     }
 

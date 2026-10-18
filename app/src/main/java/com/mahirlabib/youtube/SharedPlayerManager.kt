@@ -127,10 +127,7 @@ object SharedPlayerManager {
                 useWideViewPort = true
                 cacheMode = WebSettings.LOAD_DEFAULT
 
-                val currentUa = userAgentString
-                userAgentString = currentUa
-                    .replace("; wv", "")
-                    .replace("Version/4.0 ", "")
+                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             }
 
             val cookieManager = CookieManager.getInstance()
@@ -352,30 +349,17 @@ object SharedPlayerManager {
                     iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
                 </style>
                 <script>
-                    // Spoof document visibility so mobile YouTube iframe does not auto-pause in background
+                    // Spoof document visibility in parent document
                     try {
-                        Object.defineProperty(document, 'hidden', {
-                            get: function() { return false; },
-                            configurable: true
-                        });
-                        Object.defineProperty(document, 'visibilityState', {
-                            get: function() { return 'visible'; },
-                            configurable: true
-                        });
-                        Object.defineProperty(document, 'webkitVisibilityState', {
-                            get: function() { return 'visible'; },
-                            configurable: true
-                        });
+                        Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                        Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                        Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
                     } catch(e) {}
 
-                    // Prevent visibilitychange & blur from auto-pausing playback
-                    document.addEventListener('visibilitychange', function(e) {
-                        e.stopImmediatePropagation();
-                    }, true);
-
-                    window.addEventListener('blur', function(e) {
-                        e.stopImmediatePropagation();
-                    }, true);
+                    document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                    window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                    window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
+                    window.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
                 </script>
             </head>
             <body>
@@ -391,6 +375,40 @@ object SharedPlayerManager {
                 <script>
                     var iframe = document.getElementById('yt-embed');
                     var userWantsPlay = true;
+
+                    function hookIframe() {
+                        try {
+                            var win = iframe.contentWindow;
+                            if (!win) return;
+                            var doc = iframe.contentDocument || win.document;
+                            if (doc) {
+                                try {
+                                    Object.defineProperty(doc, 'hidden', { get: function() { return false; }, configurable: true });
+                                    Object.defineProperty(doc, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                    Object.defineProperty(doc, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                } catch(e) {}
+                                doc.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                                doc.addEventListener('webkitvisibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                            }
+                            win.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                            win.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
+                            win.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
+
+                            if (win.HTMLMediaElement && win.HTMLMediaElement.prototype) {
+                                var origPause = win.HTMLMediaElement.prototype.pause;
+                                win.HTMLMediaElement.prototype.pause = function() {
+                                    if (userWantsPlay) {
+                                        return; // Block background pause attempts!
+                                    }
+                                    return origPause.apply(this, arguments);
+                                };
+                            }
+                        } catch(e) {}
+                    }
+
+                    iframe.addEventListener('load', hookIframe);
+                    hookIframe();
+                    setInterval(hookIframe, 1500);
 
                     function notifyInteraction() {
                         try { AndroidBridge.onUserTapped(); } catch(e) {}
@@ -441,9 +459,10 @@ object SharedPlayerManager {
                                     userWantsPlay = true;
                                     try { AndroidBridge.onPlayerStateChanged(true); } catch(e) {}
                                 } else if (state === 2) { // Paused
-                                    try { AndroidBridge.onPlayerStateChanged(false); } catch(e) {}
-                                    // If user didn't request pause (e.g. background event), immediately resume
-                                    if (userWantsPlay) {
+                                    if (!userWantsPlay) {
+                                        try { AndroidBridge.onPlayerStateChanged(false); } catch(e) {}
+                                    } else {
+                                        // Unsolicited pause while user wants audio - resume immediately
                                         setTimeout(function() {
                                             if (userWantsPlay) play();
                                         }, 100);

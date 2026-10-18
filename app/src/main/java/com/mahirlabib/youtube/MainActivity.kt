@@ -118,21 +118,23 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Unified continuous flow: When user leaves the app, seamlessly continue playback
-        // using the exact same shared player in BackgroundAudioService with notification controls.
         val video = SharedPlayerManager.currentVideo
-        if (video != null && SharedPlayerManager.isPlaying) {
+        val shouldKeepPlaying = BackgroundAudioState.isRunning || SharedPlayerManager.isPlaying
+        if (video != null && shouldKeepPlaying) {
+            // Detach WebView from Activity view tree so the stopped Activity window doesn't pause the player!
+            SharedPlayerManager.detachFromContainer()
             BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
+            SharedPlayerManager.ensureActive()
+            SharedPlayerManager.resume()
         }
     }
 
     override fun onStart() {
         super.onStart()
-        // When returning to the app, dismiss the background notification without interrupting or stopping playback
-        if (BackgroundAudioState.isRunning) {
-            BackgroundAudioService.stopForegroundOnly(this)
-        }
         SharedPlayerManager.ensureActive()
+        if (SharedPlayerManager.isPlaying) {
+            SharedPlayerManager.resume()
+        }
     }
 }
 

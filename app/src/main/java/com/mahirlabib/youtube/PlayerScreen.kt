@@ -460,58 +460,27 @@ fun PlayerScreen(
                 }
 
                 if (isFullscreenExpanded || customFullscreenView != null) {
-                    // Fullscreen Top Bar: Back button, Video title, and Channel title
+                    // Fullscreen Top-left Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
                         enter = fadeIn(tween(200)),
                         exit = fadeOut(tween(200)),
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .fillMaxWidth()
+                        modifier = Modifier.align(Alignment.TopStart)
                     ) {
-                        Row(
+                        IconButton(
+                            onClick = exitFullscreen,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(Color(0xCC000000), Color.Transparent)
-                                    )
-                                )
-                                .padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(14.dp)
+                                .size(46.dp)
+                                .background(Color(0x77000000), CircleShape)
+                                .testTag("fullscreen_top_back_button")
                         ) {
-                            IconButton(
-                                onClick = exitFullscreen,
-                                modifier = Modifier
-                                    .size(46.dp)
-                                    .background(Color(0x77000000), CircleShape)
-                                    .testTag("fullscreen_top_back_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Exit Fullscreen",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(26.dp)
-                                )
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = video.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = video.channelTitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Exit Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
                         }
                     }
 

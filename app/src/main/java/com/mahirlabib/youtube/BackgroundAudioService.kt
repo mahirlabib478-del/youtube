@@ -8,9 +8,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.media.session.MediaSession
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -32,8 +29,6 @@ class BackgroundAudioService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var mediaSession: MediaSession? = null
-    private var audioManager: AudioManager? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
 
     private val heartbeatHandler = Handler(Looper.getMainLooper())
     private val heartbeatRunnable = object : Runnable {
@@ -68,7 +63,6 @@ class BackgroundAudioService : Service() {
 
     private fun initMediaSession() {
         try {
-            audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             mediaSession = MediaSession(this, "YouTubeBackgroundAudio").apply {
                 setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
                 setCallback(object : MediaSession.Callback() {
@@ -94,66 +88,6 @@ class BackgroundAudioService : Service() {
             }
         } catch (e: Exception) {
             Log.w("BackgroundAudioService", "Error initializing MediaSession", e)
-        }
-    }
-
-    private fun requestAudioFocus(): Boolean {
-        val am = audioManager ?: return false
-        return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val afr = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    .setOnAudioFocusChangeListener { focusChange ->
-                        when (focusChange) {
-                            AudioManager.AUDIOFOCUS_LOSS,
-                            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                                SharedPlayerManager.pause()
-                                updateNotification()
-                            }
-                            AudioManager.AUDIOFOCUS_GAIN -> {
-                                SharedPlayerManager.resume()
-                                updateNotification()
-                            }
-                        }
-                    }
-                    .build()
-                audioFocusRequest = afr
-                am.requestAudioFocus(afr) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            } else {
-                @Suppress("DEPRECATION")
-                am.requestAudioFocus(
-                    { focusChange ->
-                        if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-                            SharedPlayerManager.pause()
-                            updateNotification()
-                        }
-                    },
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-            }
-        } catch (e: Exception) {
-            Log.w("BackgroundAudioService", "Error requesting audio focus", e)
-            false
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(null)
-            }
-        } catch (e: Exception) {
-            Log.w("BackgroundAudioService", "Error abandoning audio focus", e)
         }
     }
 
@@ -201,6 +135,7 @@ class BackgroundAudioService : Service() {
                     ?: SharedPlayerManager.currentVideo?.channelTitle.orEmpty()
 
                 if (videoId.isNotBlank()) {
+                    val wasAlreadyPlaying = SharedPlayerManager.isPlaying
                     BackgroundAudioState.isRunning = true
                     BackgroundAudioState.isPlaying = true
                     BackgroundAudioState.currentVideoId = videoId
@@ -208,18 +143,20 @@ class BackgroundAudioService : Service() {
                     BackgroundAudioState.currentChannelTitle = channel
 
                     acquireLocks()
-                    requestAudioFocus()
                     startInForeground()
                     startHeartbeat()
 
-                    // Ensure webview timers are running and player continues without interruption
+                    // Ensure webview timers are active without interrupting ongoing playback
                     SharedPlayerManager.ensureActive()
-                    SharedPlayerManager.resume()
+                    if (!wasAlreadyPlaying) {
+                        SharedPlayerManager.resume()
+                    } else {
+                        updateNotification()
+                    }
                 }
             }
             ACTION_RESUME -> {
                 acquireLocks()
-                requestAudioFocus()
                 SharedPlayerManager.resume()
                 BackgroundAudioState.isPlaying = true
                 startHeartbeat()
@@ -372,7 +309,6 @@ class BackgroundAudioService : Service() {
     private fun stopForegroundOnlyAndSelf() {
         stopHeartbeat()
         releaseLocks()
-        abandonAudioFocus()
         BackgroundAudioState.isRunning = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -390,7 +326,6 @@ class BackgroundAudioService : Service() {
     private fun stopPlaybackAndSelf() {
         stopHeartbeat()
         releaseLocks()
-        abandonAudioFocus()
         BackgroundAudioState.isRunning = false
         BackgroundAudioState.isPlaying = false
         BackgroundAudioState.currentVideoId = null
@@ -408,7 +343,6 @@ class BackgroundAudioService : Service() {
     override fun onDestroy() {
         stopHeartbeat()
         releaseLocks()
-        abandonAudioFocus()
         mediaSession?.release()
         mediaSession = null
         if (activeService == this) {

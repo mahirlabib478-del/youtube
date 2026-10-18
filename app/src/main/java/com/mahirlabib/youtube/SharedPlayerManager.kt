@@ -413,24 +413,6 @@ object SharedPlayerManager {
                     var iframe = document.getElementById('yt-embed');
                     var userWantsPlay = true;
                     var currentTime = 0;
-                    var audioCtx = null;
-
-                    function unlockAudio() {
-                        try {
-                            if (!audioCtx) {
-                                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                                var osc = audioCtx.createOscillator();
-                                var gain = audioCtx.createGain();
-                                gain.gain.value = 0.0001;
-                                osc.connect(gain);
-                                gain.connect(audioCtx.destination);
-                                osc.start();
-                            }
-                            if (audioCtx.state === 'suspended') {
-                                audioCtx.resume();
-                            }
-                        } catch(e) {}
-                    }
 
                     function notifyInteraction() {
                         try { AndroidBridge.onUserTapped(); } catch(e) {}
@@ -454,7 +436,6 @@ object SharedPlayerManager {
 
                     function play() {
                         userWantsPlay = true;
-                        unlockAudio();
                         postCmd('playVideo');
                     }
 
@@ -465,7 +446,6 @@ object SharedPlayerManager {
 
                     function checkAndPlay() {
                         if (userWantsPlay) {
-                            unlockAudio();
                             postCmd('playVideo');
                         }
                     }

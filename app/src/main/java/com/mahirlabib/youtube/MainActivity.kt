@@ -35,9 +35,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.OpenInFull
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -429,7 +432,98 @@ private fun YouTubeApp() {
             bottomBar = {
                 if (activeVideo == null || isMiniPlayer) {
                     Column {
-                        // In-App Miniplayer Bar (Sits directly above bottom navigation bar, exactly like actual YouTube)
+                        // Background Audio Player Bar (Shown when background audio is actively playing outside or in feeds)
+                        if (BackgroundAudioState.isRunning && activeVideo == null) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                shadowElevation = 4.dp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val found = approvedVideos.find { it.videoId == BackgroundAudioState.currentVideoId }
+                                        if (found != null) {
+                                            playVideo(found)
+                                        } else if (!BackgroundAudioState.currentVideoId.isNullOrBlank()) {
+                                            playVideo(
+                                                YouTubeVideo(
+                                                    videoId = BackgroundAudioState.currentVideoId!!,
+                                                    title = BackgroundAudioState.currentVideoTitle,
+                                                    channelTitle = BackgroundAudioState.currentChannelTitle,
+                                                    publishedAt = ""
+                                                )
+                                            )
+                                        }
+                                    }
+                                    .testTag("bg_audio_running_bar")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFFFF0033),
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Headphones,
+                                                contentDescription = "Background Audio",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = BackgroundAudioState.currentVideoTitle.ifBlank { "Background Audio" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (BackgroundAudioState.isPlaying) "Playing in background" else "Paused in background",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            if (BackgroundAudioState.isPlaying) {
+                                                BackgroundAudioService.pause(context)
+                                            } else {
+                                                BackgroundAudioService.resume(context)
+                                            }
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (BackgroundAudioState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                            contentDescription = if (BackgroundAudioState.isPlaying) "Pause" else "Play",
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { BackgroundAudioService.stop(context) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Stop",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Navigation Bar
                         NavigationBar(
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MaterialTheme.colorScheme.onSurface

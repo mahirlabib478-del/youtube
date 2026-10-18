@@ -46,47 +46,7 @@ private object AppUpdateManager {
         "https://api.github.com/repos/mahirlabib478-del/youtube/releases/latest"
 
     suspend fun checkForUpdate(context: Context? = null): AvailableAppUpdate? = withContext(Dispatchers.IO) {
-        val connection = (URL(RELEASE_API).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("User-Agent", "YouTubeAndroidApp")
-        }
-        try {
-            if (connection.responseCode !in 200..299) return@withContext null
-            val payload = connection.inputStream.bufferedReader().use { it.readText() }
-            val release = JSONObject(payload)
-            if (release.optBoolean("draft", false) || release.optBoolean("prerelease", false)) {
-                return@withContext null
-            }
-            val remoteVersion = release.optString("tag_name").trim()
-            val assets = release.optJSONArray("assets") ?: return@withContext null
-            var apkUrl: String? = null
-            for (index in 0 until assets.length()) {
-                val asset = assets.optJSONObject(index) ?: continue
-                if (asset.optString("name").endsWith(".apk", ignoreCase = true)) {
-                    apkUrl = asset.optString("browser_download_url").takeIf { it.startsWith("https://") }
-                    if (apkUrl != null) break
-                }
-            }
-            val installedVersion = context?.let { ctx ->
-                try {
-                    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName
-                } catch (e: Exception) {
-                    null
-                }
-            } ?: BuildConfig.VERSION_NAME
-
-            val isNewer = compareVersions(remoteVersion, installedVersion) > 0
-            if (apkUrl.isNullOrBlank() || !isNewer) {
-                null
-            } else {
-                AvailableAppUpdate(remoteVersion.removePrefix("v").removePrefix("V"), apkUrl)
-            }
-        } finally {
-            connection.disconnect()
-        }
+        null
     }
 
     private fun parseVersion(version: String): List<Int> {

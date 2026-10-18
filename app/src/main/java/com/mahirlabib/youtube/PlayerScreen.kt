@@ -1,17 +1,23 @@
 package com.mahirlabib.youtube
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import kotlin.math.absoluteValue
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.AnimatedVisibility
@@ -54,9 +60,11 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
@@ -225,10 +233,35 @@ fun PlayerScreen(
         )
     }
 
-    LaunchedEffect(video.channelId, video.channelTitle) {
-        isSubscribed = ApprovedChannelStore.load(context).any { channel ->
-            (video.channelId.isNotBlank() && channel.channelId == video.channelId) ||
-                channel.title.equals(video.channelTitle, ignoreCase = true)
+    val isThisVideoInBg = BackgroundAudioState.isRunning && BackgroundAudioState.currentVideoId == videoId
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
+        Toast.makeText(context, "Playing in background with notification controls!", Toast.LENGTH_SHORT).show()
+    }
+
+    fun toggleBackgroundAudio() {
+        if (isThisVideoInBg) {
+            BackgroundAudioService.stop(context)
+            Toast.makeText(context, "Background audio stopped", Toast.LENGTH_SHORT).show()
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val hasPerm = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPerm) {
+                    BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
+                    Toast.makeText(context, "Playing in background! You can leave the app now.", Toast.LENGTH_LONG).show()
+                } else {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            } else {
+                BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
+                Toast.makeText(context, "Playing in background! You can leave the app now.", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -344,7 +377,7 @@ fun PlayerScreen(
                 YouTubeEmbedPlayer(
                     videoId = videoId,
                     modifier = Modifier.fillMaxSize(),
-                    autoplay = true,
+                    autoplay = !isThisVideoInBg,
                     resumeTrigger = resumeTrigger,
                     onShowCustomView = { view, callback ->
                         customFullscreenView = view
@@ -643,7 +676,34 @@ fun PlayerScreen(
                                 }
                             }
 
-                            // 2. Share Pill
+                            // 2. Background Audio Pill (Plays even when exiting app)
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = if (isThisVideoInBg) Color(0xFFFF0033) else MaterialTheme.colorScheme.surfaceVariant,
+                                onClick = { toggleBackgroundAudio() },
+                                modifier = Modifier.testTag("background_audio_pill_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isThisVideoInBg) Icons.Default.Stop else Icons.Default.Headphones,
+                                        contentDescription = "Background audio",
+                                        tint = if (isThisVideoInBg) Color.White else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = if (isThisVideoInBg) "Playing in BG" else "Play in BG",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isThisVideoInBg) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            // 3. Share Pill
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,

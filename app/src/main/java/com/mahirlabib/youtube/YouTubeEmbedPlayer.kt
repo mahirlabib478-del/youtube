@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -35,7 +36,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +52,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 private val youtubeVideoIdPattern = Regex("^[A-Za-z0-9_-]{11}$")
 
+private class PlayerBridge(
+    private val onControlsVisibilityChanged: (Boolean) -> Unit
+) {
+    @JavascriptInterface
+    fun controlsVisibility(visible: Boolean) {
+        onControlsVisibilityChanged(visible)
+    }
+}
+
 /**
  * Direct YouTube Embedded Player with isolated video lifecycle.
  * - Wraps each video in key(videoId) so switching videos completely refreshes the player instance.
@@ -66,7 +75,8 @@ fun YouTubeEmbedPlayer(
     resumeTrigger: Int = 0,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onControlsVisibilityChanged: ((Boolean) -> Unit)? = null
 ) {
     require(youtubeVideoIdPattern.matches(videoId)) { "Invalid YouTube video ID: $videoId" }
 
@@ -77,7 +87,8 @@ fun YouTubeEmbedPlayer(
         resumeTrigger = resumeTrigger,
         onPlaybackError = onPlaybackError,
         onShowCustomView = onShowCustomView,
-        onHideCustomView = onHideCustomView
+        onHideCustomView = onHideCustomView,
+        onControlsVisibilityChanged = onControlsVisibilityChanged
     )
 }
 
@@ -90,7 +101,8 @@ private fun YouTubeEmbedPlayerInstance(
     resumeTrigger: Int = 0,
     onPlaybackError: ((String) -> Unit)? = null,
     onShowCustomView: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null,
-    onHideCustomView: (() -> Unit)? = null
+    onHideCustomView: (() -> Unit)? = null,
+    onControlsVisibilityChanged: ((Boolean) -> Unit)? = null
 ) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -103,7 +115,7 @@ private fun YouTubeEmbedPlayerInstance(
                 (function() {
                     try {
                         if (typeof window.safeResumePlayback === 'function') {
-                            window.safeResumePlayback(true);
+                            window.safeResumePlayback(false);
                         }
                     } catch(e) {}
                 })();
@@ -153,6 +165,13 @@ private fun YouTubeEmbedPlayerInstance(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     setBackgroundColor(AndroidColor.BLACK)
+
+                    addJavascriptInterface(
+                        PlayerBridge { visible ->
+                            onControlsVisibilityChanged?.invoke(visible)
+                        },
+                        "AndroidBridge"
+                    )
 
                     settings.apply {
                         javaScriptEnabled = true
@@ -275,7 +294,6 @@ private fun YouTubeEmbedPlayerInstance(
             }
         )
 
-        // Retry overlay on fatal network error
         if (errorMessage != null) {
             Box(
                 modifier = Modifier
@@ -319,14 +337,6 @@ private fun YouTubeEmbedPlayerInstance(
     }
 }
 
-/**
- * Loads the HTML5 YouTube embedded player using privacy-enhanced domain and strict cross-origin referrer.
- * Suppresses:
- * 1. "Watch on YouTube" button (.ytp-youtube-button).
- * 2. End-screen suggestion grid (resets to 0 and pauses on completion).
- * 3. Pause overlay recommendations (.ytp-pause-overlay).
- * 4. Annotation teasers and promotional watermarks.
- */
 private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
     val autoPlayParam = if (autoplay) 1 else 0
     val htmlContent = """
@@ -382,10 +392,34 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
             <script>
                 var iframe = document.getElementById('yt-embed');
                 var wasPlaying = true;
+                var userWantsPlay = true;
                 var debounceTimer = null;
                 var pauseTimeout = null;
+                var controlsCheckTimer = null;
+
+                function notifyControlsVisible(visible) {
+                    try {
+                        AndroidBridge.controlsVisibility(visible);
+                    } catch (e) {}
+                }
+
+                function evaluateControlsVisibility() {
+                    var selectors = ['.ytp-chrome-controls', '.ytp-chrome-top', '.ytp-chrome-bottom', '.ytp-progress-bar-container'];
+                    var visible = false;
+                    for (var i = 0; i < selectors.length; i++) {
+                        var el = document.querySelector(selectors[i]);
+                        if (!el) continue;
+                        var style = window.getComputedStyle(el);
+                        if (style && style.visibility !== 'hidden' && style.opacity !== '0' && el.offsetHeight > 0 && el.offsetWidth > 0) {
+                            visible = true;
+                            break;
+                        }
+                    }
+                    notifyControlsVisible(visible);
+                }
 
                 function safeResumePlayback(force) {
+                    if (!userWantsPlay) return;
                     if (!force && !wasPlaying) return;
                     try {
                         if (iframe && iframe.contentWindow) {
@@ -399,8 +433,13 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                 }
 
                 window.safeResumePlayback = safeResumePlayback;
+                window.setUserWantsPlay = function(wantsPlay) {
+                    userWantsPlay = !!wantsPlay;
+                    if (userWantsPlay && wasPlaying) {
+                        safeResumePlayback(true);
+                    }
+                };
 
-                // Listen for YouTube player state changes to know whether video was playing
                 window.addEventListener('message', function(event) {
                     try {
                         var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
@@ -408,15 +447,18 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                             var state = data.info.playerState;
                             if (state === 1) { // 1 = PLAYING
                                 wasPlaying = true;
+                                userWantsPlay = true;
                                 clearTimeout(pauseTimeout);
                             } else if (state === 2) { // 2 = PAUSED
-                                // Delay clearing wasPlaying so orientation change pauses don't disable auto-resume
+                                wasPlaying = false;
+                                userWantsPlay = false;
                                 clearTimeout(pauseTimeout);
                                 pauseTimeout = setTimeout(function() {
-                                    wasPlaying = false;
-                                }, 1600);
+                                    userWantsPlay = false;
+                                }, 1500);
                             } else if (state === 0) { // 0 = ENDED
                                 wasPlaying = false;
+                                userWantsPlay = false;
                                 clearTimeout(pauseTimeout);
                                 if (iframe && iframe.contentWindow) {
                                     iframe.contentWindow.postMessage(JSON.stringify({
@@ -435,7 +477,6 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                     } catch(e) {}
                 });
 
-                // Immediate and debounced resume playback when screen orientation or window size changes while playing
                 window.addEventListener('resize', function() {
                     safeResumePlayback(false);
                     clearTimeout(debounceTimer);
@@ -461,6 +502,9 @@ private fun WebView.loadCleanEmbedPlayer(videoId: String, autoplay: Boolean) {
                         }, 100);
                     }
                 });
+
+                controlsCheckTimer = setInterval(evaluateControlsVisibility, 250);
+                evaluateControlsVisibility();
             </script>
         </body>
         </html>

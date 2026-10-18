@@ -179,4 +179,23 @@ class ExampleUnitTest {
 
         assertEquals("a-new", refreshed.first { it.channelId == "A" }.videoId)
     }
+
+    @Test
+    fun backgroundAudioStateTrackingAndConstantsAreValid() {
+        assertEquals("com.mahirlabib.youtube.action.START", BackgroundAudioService.ACTION_START)
+        assertEquals("com.mahirlabib.youtube.action.STOP_FOREGROUND_ONLY", BackgroundAudioService.ACTION_STOP_FOREGROUND_ONLY)
+        assertEquals("com.mahirlabib.youtube.action.STOP", BackgroundAudioService.ACTION_STOP)
+
+        BackgroundAudioState.isRunning = true
+        BackgroundAudioState.currentVideoId = "test-vid"
+        BackgroundAudioState.isPlaying = true
+
+        assertTrue(BackgroundAudioState.isRunning)
+        assertTrue(BackgroundAudioState.isPlaying)
+        assertEquals("test-vid", BackgroundAudioState.currentVideoId)
+
+        BackgroundAudioState.isRunning = false
+        BackgroundAudioState.isPlaying = false
+        BackgroundAudioState.currentVideoId = null
+    }
 }

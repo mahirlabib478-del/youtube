@@ -67,11 +67,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
-import androidx.compose.material.icons.filled.PictureInPicture
-import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -82,7 +79,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -265,59 +261,6 @@ fun PlayerScreen(
     }
 
     val isThisVideoInBg = BackgroundAudioState.isRunning && BackgroundAudioState.currentVideoId == videoId
-    val isThisVideoInFloating = FloatingPlayerState.isRunning && FloatingPlayerState.currentVideoId == videoId
-    var showOverlayPermissionDialog by remember { mutableStateOf(false) }
-
-    fun toggleFloatingWindow() {
-        if (isThisVideoInFloating) {
-            FloatingPlayerService.stop(context)
-            Toast.makeText(context, "Floating window closed", Toast.LENGTH_SHORT).show()
-        } else {
-            if (!OverlayPermissionHelper.hasPermission(context)) {
-                showOverlayPermissionDialog = true
-            } else {
-                if (BackgroundAudioState.isRunning) {
-                    BackgroundAudioService.stop(context)
-                }
-                FloatingPlayerService.start(context, video.videoId, video.title, video.channelTitle)
-                Toast.makeText(context, "Floating window activated! You can now use other apps.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    if (showOverlayPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showOverlayPermissionDialog = false },
-            title = {
-                Text(
-                    text = "Display Over Other Apps Permission",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Text(
-                    text = "অ্যাপের বাইরে ভাসমান উইন্ডোতে (Floating Window) ভিডিও ও অডিও চালু রাখতে 'Display over other apps' পারমিশন প্রয়োজন। Settings এ গিয়ে পারমিশন চালু করুন।",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showOverlayPermissionDialog = false
-                        OverlayPermissionHelper.requestPermission(context)
-                    }
-                ) {
-                    Text("Open Settings")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showOverlayPermissionDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -328,8 +271,8 @@ fun PlayerScreen(
 
     fun toggleBackgroundAudio() {
         if (isThisVideoInBg) {
-            BackgroundAudioService.stop(context)
-            Toast.makeText(context, "Background audio stopped", Toast.LENGTH_SHORT).show()
+            BackgroundAudioService.stopForegroundOnly(context)
+            Toast.makeText(context, "Background mode disabled", Toast.LENGTH_SHORT).show()
         } else {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val hasPerm = ContextCompat.checkSelfPermission(
@@ -839,33 +782,6 @@ fun PlayerScreen(
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isThisVideoInBg) Color.White else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-
-                            // 2b. Floating Popup Window Pill (Display over other apps - Idea 1)
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isThisVideoInFloating) Color(0xFFFF0033) else MaterialTheme.colorScheme.surfaceVariant,
-                                onClick = { toggleFloatingWindow() },
-                                modifier = Modifier.testTag("floating_popup_pill_button")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isThisVideoInFloating) Icons.Default.Close else Icons.Default.PictureInPicture,
-                                        contentDescription = "Floating popup player",
-                                        tint = if (isThisVideoInFloating) Color.White else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text(
-                                        text = if (isThisVideoInFloating) "Popup Active" else "Popup Player",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isThisVideoInFloating) Color.White else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }

@@ -119,29 +119,20 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         // Unified continuous flow: When user leaves the app, seamlessly continue playback
-        // using the exact same shared player in Floating Window (Idea 1) if overlay permission is granted,
-        // or background audio service otherwise.
+        // using the exact same shared player in BackgroundAudioService with notification controls.
         val video = SharedPlayerManager.currentVideo
         if (video != null && SharedPlayerManager.isPlaying) {
-            SharedPlayerManager.detachFromContainer()
-            if (OverlayPermissionHelper.hasPermission(this)) {
-                FloatingPlayerService.start(this, video.videoId, video.title, video.channelTitle)
-            } else {
-                BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
-            }
+            BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
         }
     }
 
     override fun onStart() {
         super.onStart()
-        // When returning to the app, dismiss the floating overlay or background notification
-        // so the in-app presentation resumes seamlessly at the exact same millisecond.
-        if (FloatingPlayerState.isRunning) {
-            FloatingPlayerService.stop(this)
-        }
+        // When returning to the app, dismiss the background notification without interrupting or stopping playback
         if (BackgroundAudioState.isRunning) {
-            BackgroundAudioService.stop(this)
+            BackgroundAudioService.stopForegroundOnly(this)
         }
+        SharedPlayerManager.ensureActive()
     }
 }
 

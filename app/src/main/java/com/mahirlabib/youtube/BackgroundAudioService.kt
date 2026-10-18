@@ -25,6 +25,7 @@ class BackgroundAudioService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         createNotificationChannel()
     }
 
@@ -48,7 +49,8 @@ class BackgroundAudioService : Service() {
 
                     startInForeground()
 
-                    // Ensure ongoing playback without reloading
+                    // Ensure webview timers are running and player continues without interruption
+                    SharedPlayerManager.ensureActive()
                     if (!SharedPlayerManager.isPlaying) {
                         SharedPlayerManager.resume()
                     }
@@ -61,6 +63,9 @@ class BackgroundAudioService : Service() {
             ACTION_PAUSE -> {
                 SharedPlayerManager.pause()
                 updateNotification()
+            }
+            ACTION_STOP_FOREGROUND_ONLY -> {
+                stopForegroundOnlyAndSelf()
             }
             ACTION_STOP -> {
                 stopPlaybackAndSelf()
@@ -87,6 +92,7 @@ class BackgroundAudioService : Service() {
     }
 
     fun updateNotification() {
+        if (!BackgroundAudioState.isRunning) return
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager?.notify(NOTIFICATION_ID, buildNotification())
     }
@@ -142,7 +148,7 @@ class BackgroundAudioService : Service() {
             .setSmallIcon(R.drawable.ic_youtube_launcher)
             .setContentTitle(displayTitle)
             .setContentText(displayText)
-            .setSubText("Background Audio")
+            .setSubText("Background Playback")
             .setContentIntent(contentPendingIntent)
             .setOngoing(isPlaying)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -158,7 +164,7 @@ class BackgroundAudioService : Service() {
                 "Background Audio Playback",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Controls for YouTube background audio playback"
+                description = "Controls for YouTube background playback"
                 setShowBadge(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
@@ -166,6 +172,25 @@ class BackgroundAudioService : Service() {
         }
     }
 
+    /**
+     * Called when returning to the app or disabling background mode:
+     * Removes the background notification without stopping or destroying the playback!
+     */
+    private fun stopForegroundOnlyAndSelf() {
+        BackgroundAudioState.isRunning = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+
+    /**
+     * Called when user explicitly taps "Stop" on the notification:
+     * Completely stops playback and tears down the service.
+     */
     private fun stopPlaybackAndSelf() {
         BackgroundAudioState.isRunning = false
         BackgroundAudioState.isPlaying = false
@@ -182,11 +207,16 @@ class BackgroundAudioService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeService == this) {
+            activeService = null
+        }
         BackgroundAudioState.isRunning = false
         super.onDestroy()
     }
 
     companion object {
+        var activeService: BackgroundAudioService? = null
+
         const val CHANNEL_ID = "youtube_background_playback_channel"
         const val NOTIFICATION_ID = 2001
 
@@ -194,6 +224,7 @@ class BackgroundAudioService : Service() {
         const val ACTION_PAUSE = "com.mahirlabib.youtube.action.PAUSE"
         const val ACTION_RESUME = "com.mahirlabib.youtube.action.RESUME"
         const val ACTION_STOP = "com.mahirlabib.youtube.action.STOP"
+        const val ACTION_STOP_FOREGROUND_ONLY = "com.mahirlabib.youtube.action.STOP_FOREGROUND_ONLY"
 
         const val EXTRA_VIDEO_ID = "extra_video_id"
         const val EXTRA_TITLE = "extra_title"
@@ -209,6 +240,19 @@ class BackgroundAudioService : Service() {
             ContextCompat.startForegroundService(context, intent)
         }
 
+        /**
+         * Dismisses notification and stops service without stopping ongoing playback.
+         */
+        fun stopForegroundOnly(context: Context) {
+            val intent = Intent(context, BackgroundAudioService::class.java).apply {
+                action = ACTION_STOP_FOREGROUND_ONLY
+            }
+            context.startService(intent)
+        }
+
+        /**
+         * Fully stops playback and dismisses notification.
+         */
         fun stop(context: Context) {
             val intent = Intent(context, BackgroundAudioService::class.java).apply {
                 action = ACTION_STOP

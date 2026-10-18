@@ -311,6 +311,46 @@ object SharedPlayerManager {
         }
     }
 
+    fun seekBy(seconds: Int) {
+        sharedWebView?.evaluateJavascript(
+            """
+            (function() {
+                try {
+                    if (typeof window.seekBy === 'function') {
+                        window.seekBy($seconds);
+                    }
+                } catch(e) {}
+            })();
+            """.trimIndent(),
+            null
+        )
+    }
+
+    /**
+     * Active heartbeat check called periodically by BackgroundAudioService:
+     * If user wants audio and player was suspended by OS backgrounding, resumes it immediately.
+     */
+    fun checkAndResumeIfPaused() {
+        if (!isPlaying && !BackgroundAudioState.isPlaying) return
+        sharedWebView?.let { wv ->
+            ensureActive()
+            wv.evaluateJavascript(
+                """
+                (function() {
+                    try {
+                        if (typeof window.checkAndPlay === 'function') {
+                            window.checkAndPlay();
+                        } else if (typeof window.playPlayer === 'function') {
+                            window.playPlayer();
+                        }
+                    } catch(e) {}
+                })();
+                """.trimIndent(),
+                null
+            )
+        }
+    }
+
     fun stop() {
         isPlaying = false
         currentVideo = null
@@ -372,6 +412,25 @@ object SharedPlayerManager {
                 <script>
                     var iframe = document.getElementById('yt-embed');
                     var userWantsPlay = true;
+                    var currentTime = 0;
+                    var audioCtx = null;
+
+                    function unlockAudio() {
+                        try {
+                            if (!audioCtx) {
+                                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                                var osc = audioCtx.createOscillator();
+                                var gain = audioCtx.createGain();
+                                gain.gain.value = 0.0001;
+                                osc.connect(gain);
+                                gain.connect(audioCtx.destination);
+                                osc.start();
+                            }
+                            if (audioCtx.state === 'suspended') {
+                                audioCtx.resume();
+                            }
+                        } catch(e) {}
+                    }
 
                     function notifyInteraction() {
                         try { AndroidBridge.onUserTapped(); } catch(e) {}
@@ -395,6 +454,7 @@ object SharedPlayerManager {
 
                     function play() {
                         userWantsPlay = true;
+                        unlockAudio();
                         postCmd('playVideo');
                     }
 
@@ -403,13 +463,48 @@ object SharedPlayerManager {
                         postCmd('pauseVideo');
                     }
 
+                    function checkAndPlay() {
+                        if (userWantsPlay) {
+                            unlockAudio();
+                            postCmd('playVideo');
+                        }
+                    }
+
+                    function seekBy(offset) {
+                        var target = Math.max(0, (currentTime || 0) + offset);
+                        postCmd('seekTo', [target, true]);
+                    }
+
                     window.playPlayer = play;
                     window.pausePlayer = pause;
+                    window.checkAndPlay = checkAndPlay;
+                    window.seekBy = seekBy;
+
+                    iframe.onload = function() {
+                        try {
+                            var idoc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (idoc) {
+                                Object.defineProperty(idoc, 'hidden', { get: function() { return false; }, configurable: true });
+                                Object.defineProperty(idoc, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                Object.defineProperty(idoc, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+                                idoc.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                            }
+                            var iwin = iframe.contentWindow;
+                            if (iwin) {
+                                iwin.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+                                iwin.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
+                                iwin.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
+                            }
+                        } catch(e) {}
+                    };
 
                     window.addEventListener('message', function(event) {
                         try {
                             var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                             if (data && data.event === 'infoDelivery' && data.info) {
+                                if (typeof data.info.currentTime === 'number') {
+                                    currentTime = data.info.currentTime;
+                                }
                                 var state = data.info.playerState;
                                 if (state === 1) { // Playing
                                     userWantsPlay = true;
@@ -421,7 +516,7 @@ object SharedPlayerManager {
                                         // Unsolicited pause while user wants audio - resume immediately
                                         setTimeout(function() {
                                             if (userWantsPlay) play();
-                                        }, 100);
+                                        }, 50);
                                     }
                                 } else if (state === 0) { // Ended
                                     userWantsPlay = false;

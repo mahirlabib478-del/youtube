@@ -1,7 +1,12 @@
 package com.mahirlabib.youtube
 
+import android.app.PictureInPictureParams
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -108,6 +113,41 @@ object ThemeStore {
 }
 
 class MainActivity : ComponentActivity() {
+    var isInPipMode by mutableStateOf(false)
+        private set
+
+    fun enterPipMode(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return try {
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(16, 9))
+                    .build()
+                enterPictureInPictureMode(params)
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Failed to enter Picture-in-Picture mode", e)
+                false
+            }
+        }
+        return false
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Automatically enter Picture-in-Picture mode when leaving the app while watching video
+        val video = SharedPlayerManager.currentVideo
+        if (video != null && (SharedPlayerManager.isPlaying || BackgroundAudioState.isRunning)) {
+            enterPipMode()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPipMode = isInPictureInPictureMode
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -119,18 +159,16 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         val video = SharedPlayerManager.currentVideo
-        val shouldKeepPlaying = BackgroundAudioState.isRunning || SharedPlayerManager.isPlaying
-        if (video != null && shouldKeepPlaying) {
-            BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
+        if (video != null && BackgroundAudioState.isRunning) {
             SharedPlayerManager.ensureActive()
-            SharedPlayerManager.resume()
+            SharedPlayerManager.checkAndResumeIfPaused()
         }
     }
 
     override fun onStart() {
         super.onStart()
         SharedPlayerManager.ensureActive()
-        if (SharedPlayerManager.isPlaying) {
+        if (SharedPlayerManager.isPlaying || BackgroundAudioState.isPlaying) {
             SharedPlayerManager.resume()
         }
     }
@@ -401,6 +439,22 @@ private fun YouTubeApp() {
     )
 
     MaterialTheme(colorScheme = if (isDarkMode) youtubeDarkColors else youtubeLightColors) {
+        val mainActivity = context as? MainActivity
+        val isPip = mainActivity?.isInPipMode == true
+
+        if (isPip) {
+            val pipVideo = SharedPlayerManager.currentVideo ?: activeVideo
+            if (pipVideo != null) {
+                Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                    YouTubeEmbedPlayer(
+                        videoId = pipVideo.videoId,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+            return@MaterialTheme
+        }
+
         AppUpdatePrompt()
         // Keep the existing PlayerScreen/WebView composed during Android PiP.
         // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.

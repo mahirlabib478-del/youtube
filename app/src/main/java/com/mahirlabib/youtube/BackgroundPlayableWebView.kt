@@ -6,9 +6,9 @@ import android.view.View
 import android.webkit.WebView
 
 /**
- * Custom WebView that intercepts window visibility, window focus, and pause signals
- * so Chromium's internal media pipeline does NOT pause audio when the app is
- * minimized, the screen is turned off, or the Activity loses focus.
+ * Custom WebView that intercepts window visibility, window focus, view hierarchy state,
+ * and pause signals so Chromium's internal media pipeline does NOT pause audio when the app is
+ * minimized, detached, the screen is turned off, or the Activity loses focus.
  */
 class BackgroundPlayableWebView @JvmOverloads constructor(
     context: Context,
@@ -17,6 +17,18 @@ class BackgroundPlayableWebView @JvmOverloads constructor(
 ) : WebView(context, attrs, defStyleAttr) {
 
     var isBackgroundAudioActive: Boolean = true
+
+    override fun getWindowVisibility(): Int {
+        return if (isBackgroundAudioActive) View.VISIBLE else super.getWindowVisibility()
+    }
+
+    override fun isShown(): Boolean {
+        return if (isBackgroundAudioActive) true else super.isShown()
+    }
+
+    override fun hasWindowFocus(): Boolean {
+        return if (isBackgroundAudioActive) true else super.hasWindowFocus()
+    }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
         if (isBackgroundAudioActive) {
@@ -53,6 +65,12 @@ class BackgroundPlayableWebView @JvmOverloads constructor(
     override fun onPause() {
         if (!isBackgroundAudioActive) {
             super.onPause()
+        }
+    }
+
+    override fun pauseTimers() {
+        if (!isBackgroundAudioActive) {
+            super.pauseTimers()
         }
     }
 }

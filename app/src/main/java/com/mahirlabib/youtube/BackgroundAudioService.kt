@@ -14,7 +14,9 @@ import android.media.AudioManager
 import android.media.session.MediaSession
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -22,8 +24,8 @@ import androidx.core.content.ContextCompat
 
 /**
  * Foreground Service that keeps playback active in the background and provides
- * persistent notification controls (Play/Pause, Stop).
- * Delegates directly to SharedPlayerManager to maintain a single continuous playback flow.
+ * persistent notification controls (Play/Pause, Rewind, Fast Forward, Stop).
+ * Delegates directly to SharedPlayerManager to maintain continuous background audio.
  */
 class BackgroundAudioService : Service() {
 
@@ -33,6 +35,19 @@ class BackgroundAudioService : Service() {
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
 
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val heartbeatRunnable = object : Runnable {
+        override fun run() {
+            if (BackgroundAudioState.isRunning) {
+                if (BackgroundAudioState.isPlaying) {
+                    SharedPlayerManager.ensureActive()
+                    SharedPlayerManager.checkAndResumeIfPaused()
+                }
+                heartbeatHandler.postDelayed(this, 1500)
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -40,6 +55,15 @@ class BackgroundAudioService : Service() {
         activeService = this
         createNotificationChannel()
         initMediaSession()
+    }
+
+    private fun startHeartbeat() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
+        heartbeatHandler.post(heartbeatRunnable)
+    }
+
+    private fun stopHeartbeat() {
+        heartbeatHandler.removeCallbacks(heartbeatRunnable)
     }
 
     private fun initMediaSession() {
@@ -55,6 +79,12 @@ class BackgroundAudioService : Service() {
                     override fun onPause() {
                         SharedPlayerManager.pause()
                         updateNotification()
+                    }
+                    override fun onFastForward() {
+                        SharedPlayerManager.seekBy(10)
+                    }
+                    override fun onRewind() {
+                        SharedPlayerManager.seekBy(-10)
                     }
                     override fun onStop() {
                         stopPlaybackAndSelf()
@@ -180,6 +210,7 @@ class BackgroundAudioService : Service() {
                     acquireLocks()
                     requestAudioFocus()
                     startInForeground()
+                    startHeartbeat()
 
                     // Ensure webview timers are running and player continues without interruption
                     SharedPlayerManager.ensureActive()
@@ -191,12 +222,19 @@ class BackgroundAudioService : Service() {
                 requestAudioFocus()
                 SharedPlayerManager.resume()
                 BackgroundAudioState.isPlaying = true
+                startHeartbeat()
                 updateNotification()
             }
             ACTION_PAUSE -> {
                 SharedPlayerManager.pause()
                 BackgroundAudioState.isPlaying = false
                 updateNotification()
+            }
+            ACTION_SEEK_BACK -> {
+                SharedPlayerManager.seekBy(-10)
+            }
+            ACTION_SEEK_FORWARD -> {
+                SharedPlayerManager.seekBy(10)
             }
             ACTION_STOP_FOREGROUND_ONLY -> {
                 stopForegroundOnlyAndSelf()
@@ -248,6 +286,16 @@ class BackgroundAudioService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val rewIntent = Intent(this, BackgroundAudioService::class.java).apply {
+            action = ACTION_SEEK_BACK
+        }
+        val rewPendingIntent = PendingIntent.getService(
+            this,
+            10,
+            rewIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val playPauseIntent = Intent(this, BackgroundAudioService::class.java).apply {
             action = if (isPlaying) ACTION_PAUSE else ACTION_RESUME
         }
@@ -255,6 +303,16 @@ class BackgroundAudioService : Service() {
             this,
             1,
             playPauseIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val ffIntent = Intent(this, BackgroundAudioService::class.java).apply {
+            action = ACTION_SEEK_FORWARD
+        }
+        val ffPendingIntent = PendingIntent.getService(
+            this,
+            11,
+            ffIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -286,7 +344,9 @@ class BackgroundAudioService : Service() {
             .setContentIntent(contentPendingIntent)
             .setOngoing(isPlaying)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(android.R.drawable.ic_media_rew, "-10s", rewPendingIntent)
             .addAction(playPauseIcon, playPauseTitle, playPausePendingIntent)
+            .addAction(android.R.drawable.ic_media_ff, "+10s", ffPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopPendingIntent)
             .build()
     }
@@ -310,6 +370,7 @@ class BackgroundAudioService : Service() {
      * Removes the background notification without stopping or destroying the playback.
      */
     private fun stopForegroundOnlyAndSelf() {
+        stopHeartbeat()
         releaseLocks()
         abandonAudioFocus()
         BackgroundAudioState.isRunning = false
@@ -327,6 +388,7 @@ class BackgroundAudioService : Service() {
      * Completely stops playback and tears down the service.
      */
     private fun stopPlaybackAndSelf() {
+        stopHeartbeat()
         releaseLocks()
         abandonAudioFocus()
         BackgroundAudioState.isRunning = false
@@ -344,6 +406,7 @@ class BackgroundAudioService : Service() {
     }
 
     override fun onDestroy() {
+        stopHeartbeat()
         releaseLocks()
         abandonAudioFocus()
         mediaSession?.release()
@@ -366,19 +429,25 @@ class BackgroundAudioService : Service() {
         const val ACTION_RESUME = "com.mahirlabib.youtube.action.RESUME"
         const val ACTION_STOP = "com.mahirlabib.youtube.action.STOP"
         const val ACTION_STOP_FOREGROUND_ONLY = "com.mahirlabib.youtube.action.STOP_FOREGROUND_ONLY"
+        const val ACTION_SEEK_BACK = "com.mahirlabib.youtube.action.SEEK_BACK"
+        const val ACTION_SEEK_FORWARD = "com.mahirlabib.youtube.action.SEEK_FORWARD"
 
         const val EXTRA_VIDEO_ID = "extra_video_id"
         const val EXTRA_TITLE = "extra_title"
         const val EXTRA_CHANNEL = "extra_channel"
 
         fun start(context: Context, videoId: String, title: String, channel: String) {
-            val intent = Intent(context, BackgroundAudioService::class.java).apply {
-                action = ACTION_START
-                putExtra(EXTRA_VIDEO_ID, videoId)
-                putExtra(EXTRA_TITLE, title)
-                putExtra(EXTRA_CHANNEL, channel)
+            try {
+                val intent = Intent(context, BackgroundAudioService::class.java).apply {
+                    action = ACTION_START
+                    putExtra(EXTRA_VIDEO_ID, videoId)
+                    putExtra(EXTRA_TITLE, title)
+                    putExtra(EXTRA_CHANNEL, channel)
+                }
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.e("BackgroundAudioService", "Error starting background service", e)
             }
-            ContextCompat.startForegroundService(context, intent)
         }
 
         fun stopForegroundOnly(context: Context) {
@@ -405,6 +474,20 @@ class BackgroundAudioService : Service() {
         fun resume(context: Context) {
             val intent = Intent(context, BackgroundAudioService::class.java).apply {
                 action = ACTION_RESUME
+            }
+            context.startService(intent)
+        }
+
+        fun seekBack(context: Context) {
+            val intent = Intent(context, BackgroundAudioService::class.java).apply {
+                action = ACTION_SEEK_BACK
+            }
+            context.startService(intent)
+        }
+
+        fun seekForward(context: Context) {
+            val intent = Intent(context, BackgroundAudioService::class.java).apply {
+                action = ACTION_SEEK_FORWARD
             }
             context.startService(intent)
         }

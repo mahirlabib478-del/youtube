@@ -62,6 +62,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
@@ -265,13 +266,13 @@ fun PlayerScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { _ ->
         BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
-        Toast.makeText(context, "Playing in background with notification controls!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Background Audio Active: Sound will play when screen is off or app is closed!", Toast.LENGTH_LONG).show()
     }
 
     fun toggleBackgroundAudio() {
         if (isThisVideoInBg) {
             BackgroundAudioService.stopForegroundOnly(context)
-            Toast.makeText(context, "Background mode disabled", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Background audio disabled", Toast.LENGTH_SHORT).show()
         } else {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val hasPerm = ContextCompat.checkSelfPermission(
@@ -280,13 +281,13 @@ fun PlayerScreen(
                 ) == PackageManager.PERMISSION_GRANTED
                 if (hasPerm) {
                     BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
-                    Toast.makeText(context, "Playing in background! You can leave the app now.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Background Audio Active: Sound will play when screen is off or app is closed!", Toast.LENGTH_LONG).show()
                 } else {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             } else {
                 BackgroundAudioService.start(context, video.videoId, video.title, video.channelTitle)
-                Toast.makeText(context, "Playing in background! You can leave the app now.", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Background Audio Active: Sound will play when screen is off or app is closed!", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -780,6 +781,39 @@ fun PlayerScreen(
                                         style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isThisVideoInBg) Color.White else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            // 2.5 Picture-in-Picture Pop-out Pill
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                onClick = {
+                                    val activity = (context as? MainActivity)
+                                        ?: ((context as? ContextWrapper)?.baseContext as? MainActivity)
+                                    if (activity?.enterPipMode() != true) {
+                                        Toast.makeText(context, "Picture-in-Picture mode not supported or ready", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier.testTag("pip_popout_pill_button")
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PictureInPictureAlt,
+                                        contentDescription = "Pop-out PiP",
+                                        tint = MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Pop-out",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }

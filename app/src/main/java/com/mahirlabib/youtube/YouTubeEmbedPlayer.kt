@@ -79,10 +79,11 @@ fun YouTubeEmbedPlayer(
         }
     }
 
-    // Detach from this container when disposing, but NEVER destroy the player!
     DisposableEffect(Unit) {
         onDispose {
-            SharedPlayerManager.detachFromContainer()
+            if (!BackgroundAudioState.isRunning) {
+                SharedPlayerManager.detachFromContainer()
+            }
         }
     }
 

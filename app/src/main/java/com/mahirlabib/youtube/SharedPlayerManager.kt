@@ -26,14 +26,14 @@ import androidx.compose.runtime.setValue
 
 /**
  * Unified Shared Player Manager:
- * Maintains a single, continuous WebView player across in-app UI and background service.
+ * Maintains a single, continuous BackgroundPlayableWebView player across in-app UI and background service.
  * Eliminates restarting, gap, or desynchronization when moving between app and background.
  */
 object SharedPlayerManager {
     private const val TAG = "SharedPlayerManager"
 
     // Single persistent WebView instance stored in Application context
-    private var sharedWebView: WebView? = null
+    private var sharedWebView: BackgroundPlayableWebView? = null
 
     // Reactive Compose state
     var currentVideo by mutableStateOf<YouTubeVideo?>(null)
@@ -76,12 +76,12 @@ object SharedPlayerManager {
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
-    fun getOrCreateWebView(context: Context): WebView {
+    fun getOrCreateWebView(context: Context): BackgroundPlayableWebView {
         sharedWebView?.let { return it }
 
         val appContext = context.applicationContext
-        val wv = WebView(appContext).apply {
-            setLayerType(View.LAYER_TYPE_NONE, null)
+        val wv = BackgroundPlayableWebView(appContext).apply {
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             clipChildren = true
             clipToPadding = true
             layoutParams = ViewGroup.LayoutParams(
@@ -126,7 +126,6 @@ object SharedPlayerManager {
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 cacheMode = WebSettings.LOAD_DEFAULT
-
                 userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             }
 
@@ -218,6 +217,7 @@ object SharedPlayerManager {
      */
     fun ensureActive() {
         sharedWebView?.let { wv ->
+            wv.isBackgroundAudioActive = true
             wv.resumeTimers()
             wv.onResume()
         }
@@ -293,8 +293,6 @@ object SharedPlayerManager {
                     try {
                         if (typeof window.playPlayer === 'function') {
                             window.playPlayer();
-                        } else if (typeof window.safeResumePlayback === 'function') {
-                            window.safeResumePlayback(true);
                         } else {
                             var iframe = document.getElementById('yt-embed');
                             if (iframe && iframe.contentWindow) {
@@ -349,7 +347,6 @@ object SharedPlayerManager {
                     iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
                 </style>
                 <script>
-                    // Spoof document visibility in parent document
                     try {
                         Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
                         Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
@@ -376,40 +373,6 @@ object SharedPlayerManager {
                     var iframe = document.getElementById('yt-embed');
                     var userWantsPlay = true;
 
-                    function hookIframe() {
-                        try {
-                            var win = iframe.contentWindow;
-                            if (!win) return;
-                            var doc = iframe.contentDocument || win.document;
-                            if (doc) {
-                                try {
-                                    Object.defineProperty(doc, 'hidden', { get: function() { return false; }, configurable: true });
-                                    Object.defineProperty(doc, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
-                                    Object.defineProperty(doc, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
-                                } catch(e) {}
-                                doc.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-                                doc.addEventListener('webkitvisibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-                            }
-                            win.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-                            win.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
-                            win.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
-
-                            if (win.HTMLMediaElement && win.HTMLMediaElement.prototype) {
-                                var origPause = win.HTMLMediaElement.prototype.pause;
-                                win.HTMLMediaElement.prototype.pause = function() {
-                                    if (userWantsPlay) {
-                                        return; // Block background pause attempts!
-                                    }
-                                    return origPause.apply(this, arguments);
-                                };
-                            }
-                        } catch(e) {}
-                    }
-
-                    iframe.addEventListener('load', hookIframe);
-                    hookIframe();
-                    setInterval(hookIframe, 1500);
-
                     function notifyInteraction() {
                         try { AndroidBridge.onUserTapped(); } catch(e) {}
                     }
@@ -418,37 +381,30 @@ object SharedPlayerManager {
                     window.addEventListener('click', notifyInteraction, { passive: true });
                     window.addEventListener('pointerup', notifyInteraction, { passive: true });
 
-                    function play() {
-                        userWantsPlay = true;
+                    function postCmd(func, args) {
                         try {
                             if (iframe && iframe.contentWindow) {
                                 iframe.contentWindow.postMessage(JSON.stringify({
                                     event: 'command',
-                                    func: 'playVideo',
-                                    args: []
+                                    func: func,
+                                    args: args || []
                                 }), '*');
                             }
                         } catch(e) {}
+                    }
+
+                    function play() {
+                        userWantsPlay = true;
+                        postCmd('playVideo');
                     }
 
                     function pause() {
                         userWantsPlay = false;
-                        try {
-                            if (iframe && iframe.contentWindow) {
-                                iframe.contentWindow.postMessage(JSON.stringify({
-                                    event: 'command',
-                                    func: 'pauseVideo',
-                                    args: []
-                                }), '*');
-                            }
-                        } catch(e) {}
+                        postCmd('pauseVideo');
                     }
 
                     window.playPlayer = play;
                     window.pausePlayer = pause;
-                    window.safeResumePlayback = function(force) {
-                        play();
-                    };
 
                     window.addEventListener('message', function(event) {
                         try {

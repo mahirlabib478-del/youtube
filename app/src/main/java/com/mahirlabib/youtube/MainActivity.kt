@@ -121,8 +121,6 @@ class MainActivity : ComponentActivity() {
         val video = SharedPlayerManager.currentVideo
         val shouldKeepPlaying = BackgroundAudioState.isRunning || SharedPlayerManager.isPlaying
         if (video != null && shouldKeepPlaying) {
-            // Detach WebView from Activity view tree so the stopped Activity window doesn't pause the player!
-            SharedPlayerManager.detachFromContainer()
             BackgroundAudioService.start(this, video.videoId, video.title, video.channelTitle)
             SharedPlayerManager.ensureActive()
             SharedPlayerManager.resume()
@@ -408,6 +406,21 @@ private fun YouTubeApp() {
         // Creating a second YouTubeEmbedPlayer here restarted playback on PiP entry.
 
         Box(modifier = Modifier.fillMaxSize()) {
+            // Keep WebView attached and playing if user dismissed player but background audio is running
+            if (activeVideo == null && BackgroundAudioState.isRunning) {
+                AndroidView(
+                    modifier = Modifier.size(1.dp),
+                    factory = { ctx ->
+                        android.widget.FrameLayout(ctx).apply {
+                            SharedPlayerManager.attachToContainer(this)
+                        }
+                    },
+                    update = { container ->
+                        SharedPlayerManager.attachToContainer(container)
+                    }
+                )
+            }
+
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
             topBar = {

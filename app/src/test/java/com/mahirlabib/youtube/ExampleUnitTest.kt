@@ -183,6 +183,8 @@ class ExampleUnitTest {
     @Test
     fun backgroundAudioStateTrackingAndConstantsAreValid() {
         assertEquals("com.mahirlabib.youtube.action.START", BackgroundAudioService.ACTION_START)
+        assertEquals("com.mahirlabib.youtube.action.PAUSE", BackgroundAudioService.ACTION_PAUSE)
+        assertEquals("com.mahirlabib.youtube.action.RESUME", BackgroundAudioService.ACTION_RESUME)
         assertEquals("com.mahirlabib.youtube.action.STOP_FOREGROUND_ONLY", BackgroundAudioService.ACTION_STOP_FOREGROUND_ONLY)
         assertEquals("com.mahirlabib.youtube.action.STOP", BackgroundAudioService.ACTION_STOP)
 
@@ -197,5 +199,29 @@ class ExampleUnitTest {
         BackgroundAudioState.isRunning = false
         BackgroundAudioState.isPlaying = false
         BackgroundAudioState.currentVideoId = null
+    }
+
+    @Test
+    fun sharedPlayerManagerStateAndVideoAssignment() {
+        val testVideo = YouTubeVideo(
+            videoId = "M7lc1UVf-VE",
+            title = "Test Video",
+            channelTitle = "Test Channel",
+            publishedAt = "2025-01-01T00:00:00Z"
+        )
+        SharedPlayerManager.currentVideo = testVideo
+        SharedPlayerManager.isPlaying = true
+        SharedPlayerManager.isControlsVisible = true
+
+        assertEquals("M7lc1UVf-VE", SharedPlayerManager.currentVideo?.videoId)
+        assertTrue(SharedPlayerManager.isPlaying)
+        assertTrue(SharedPlayerManager.isControlsVisible)
+
+        SharedPlayerManager.isControlsVisible = false
+        assertFalse(SharedPlayerManager.isControlsVisible)
+
+        SharedPlayerManager.isPlaying = false
+        assertFalse(SharedPlayerManager.isPlaying)
+        SharedPlayerManager.currentVideo = null
     }
 }

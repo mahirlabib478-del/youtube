@@ -140,7 +140,7 @@ fun PlayerScreen(
     var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
     var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
-    var showControls by remember(videoId) { mutableStateOf(false) }
+    var showControls by remember(videoId) { mutableStateOf(true) }
 
     val exitFullscreen: () -> Unit = {
         val cb = customViewCallback
@@ -148,7 +148,7 @@ fun PlayerScreen(
         customFullscreenView = null
         customViewCallback = null
         isFullscreenExpanded = false
-        showControls = false
+        showControls = true
         if (cb != null) {
             try {
                 cb.onCustomViewHidden()
@@ -174,16 +174,16 @@ fun PlayerScreen(
     var lastInteractionTime by remember { mutableLongStateOf(0L) }
     val toggleControls = {
         val now = System.currentTimeMillis()
-        if (now - lastInteractionTime > 250) {
+        if (now - lastInteractionTime > 350) {
             lastInteractionTime = now
             showControls = !showControls
         }
     }
 
-    // Auto-hide controls after 3.5 seconds of inactivity
-    LaunchedEffect(showControls) {
+    // Auto-hide controls together after 3.8 seconds of inactivity
+    LaunchedEffect(showControls, videoId, isFullscreenExpanded) {
         if (showControls) {
-            delay(3500)
+            delay(3800)
             showControls = false
         }
     }
@@ -201,14 +201,13 @@ fun PlayerScreen(
     LaunchedEffect(isFullscreenExpanded) {
         val window = activity?.window ?: return@LaunchedEffect
         val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        showControls = true
         if (isFullscreenExpanded) {
-            showControls = true
             insetsController.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             insetsController.hide(WindowInsetsCompat.Type.systemBars())
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            showControls = false
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
@@ -293,6 +292,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(video.videoId) {
+        showControls = true
         if (SharedPlayerManager.currentVideo?.videoId != video.videoId) {
             SharedPlayerManager.playVideo(context, video)
         }
@@ -358,89 +358,87 @@ fun PlayerScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = (if (isFullscreenExpanded || miniMode) {
+                modifier = if (isFullscreenExpanded || miniMode) {
                     Modifier.fillMaxSize()
                         .clip(if (miniMode) RoundedCornerShape(12.dp) else RoundedCornerShape(0.dp))
                         .clipToBounds()
                         .background(Color.Black)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-                }).then(
-                    if (!miniMode) {
-                        Modifier.pointerInput(isFullscreenExpanded) {
-                            if (isFullscreenExpanded) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                    val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
-                                    if (up != null) {
-                                        toggleControls()
-                                    }
-                                }
-                            } else {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
-                                    var hasSwipedDown = false
-                                    while (true) {
-                                        val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                        if (!change.pressed) {
-                                            if (!hasSwipedDown) {
-                                                toggleControls()
-                                            }
-                                            break
-                                        }
-                                        val deltaY = change.position.y - down.position.y
-                                        val deltaX = change.position.x - down.position.x
-                                        // Swipe down threshold: downward move of > 65px and predominantly vertical
-                                        if (deltaY > 65f && deltaY > deltaX.absoluteValue * 1.4f) {
-                                            hasSwipedDown = true
-                                            onClose()
-                                            break
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else Modifier
-                )
+                }
             ) {
-                // Keep one embed composable at a stable composition position when
-                // switching between full player and mini-player. Branching into two
-                // YouTubeEmbedPlayer calls disposes the WebView and restarts playback.
-                YouTubeEmbedPlayer(
-                    videoId = videoId,
-                    modifier = Modifier.fillMaxSize(),
-                    autoplay = !isThisVideoInBg,
-                    resumeTrigger = resumeTrigger,
-                    onShowCustomView = { view, callback ->
-                        customFullscreenView = view
-                        customViewCallback = callback
-                        isFullscreenExpanded = true
-                    },
-                    onHideCustomView = {
-                        val v = customFullscreenView
-                        customFullscreenView = null
-                        customViewCallback = null
-                        isFullscreenExpanded = false
-                        showControls = false
-                        if (v != null) {
-                            try {
-                                (v.parent as? ViewGroup)?.removeView(v)
-                            } catch (e: Exception) {
-                                Log.w("PlayerScreen", "Error removing custom view on hide", e)
-                            }
-                        }
-                    }
-                )
-
-                if (customFullscreenView != null) {
-                    AndroidView(
+                // Video player layer with gesture detection for tapping and swiping down
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (!miniMode) {
+                                Modifier.pointerInput(isFullscreenExpanded) {
+                                    awaitEachGesture {
+                                        val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                                        var hasSwipedDown = false
+                                        var hasMoved = false
+                                        while (true) {
+                                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                            val deltaY = change.position.y - down.position.y
+                                            val deltaX = change.position.x - down.position.x
+                                            if (deltaX.absoluteValue > 18f || deltaY.absoluteValue > 18f) {
+                                                hasMoved = true
+                                            }
+                                            if (!isFullscreenExpanded && deltaY > 65f && deltaY > deltaX.absoluteValue * 1.4f) {
+                                                hasSwipedDown = true
+                                                onClose()
+                                                break
+                                            }
+                                            if (!change.pressed) {
+                                                if (!hasSwipedDown && !hasMoved) {
+                                                    toggleControls()
+                                                }
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            } else Modifier
+                        )
+                ) {
+                    YouTubeEmbedPlayer(
+                        videoId = videoId,
                         modifier = Modifier.fillMaxSize(),
-                        factory = {
-                            (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
-                            customFullscreenView ?: View(it)
+                        autoplay = !isThisVideoInBg,
+                        resumeTrigger = resumeTrigger,
+                        onShowCustomView = { view, callback ->
+                            customFullscreenView = view
+                            customViewCallback = callback
+                            isFullscreenExpanded = true
+                            showControls = true
+                        },
+                        onHideCustomView = {
+                            val v = customFullscreenView
+                            customFullscreenView = null
+                            customViewCallback = null
+                            isFullscreenExpanded = false
+                            showControls = true
+                            if (v != null) {
+                                try {
+                                    (v.parent as? ViewGroup)?.removeView(v)
+                                } catch (e: Exception) {
+                                    Log.w("PlayerScreen", "Error removing custom view on hide", e)
+                                }
+                            }
                         }
                     )
+
+                    if (customFullscreenView != null) {
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = {
+                                (customFullscreenView?.parent as? ViewGroup)?.removeView(customFullscreenView)
+                                customFullscreenView ?: View(it)
+                            }
+                        )
+                    }
                 }
 
                 if (miniMode) {
@@ -465,8 +463,8 @@ fun PlayerScreen(
                     // Fullscreen Top Bar: Back button, Video title, and Channel title
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
-                        enter = fadeIn(tween(180)),
-                        exit = fadeOut(tween(220)),
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(200)),
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .fillMaxWidth()
@@ -486,7 +484,7 @@ fun PlayerScreen(
                                 onClick = exitFullscreen,
                                 modifier = Modifier
                                     .size(46.dp)
-                                    .background(Color(0x66000000), CircleShape)
+                                    .background(Color(0x77000000), CircleShape)
                                     .testTag("fullscreen_top_back_button")
                             ) {
                                 Icon(
@@ -520,8 +518,8 @@ fun PlayerScreen(
                     // Bottom-right floating exit button when fullscreen controls are revealed
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
-                        enter = fadeIn(tween(180)),
-                        exit = fadeOut(tween(220)),
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(200)),
                         modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
                         IconButton(
@@ -542,13 +540,13 @@ fun PlayerScreen(
                     }
                 }
 
-                // Portrait 16:9 Controls overlay: Hidden by default, tap to reveal, auto-hides after 3.5s
+                // Portrait 16:9 Controls overlay: Synchronized back and fullscreen buttons
                 if (!isFullscreenExpanded && !miniMode) {
-                    // Top-left corner Collapse / Back button
+                    // Top-left corner Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
-                        enter = fadeIn(tween(180)),
-                        exit = fadeOut(tween(220)),
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(200)),
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
                         IconButton(
@@ -556,14 +554,14 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .padding(10.dp)
                                 .size(44.dp)
-                                .background(Color(0x66000000), CircleShape)
+                                .background(Color(0x77000000), CircleShape)
                                 .testTag("player_back_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Minimize to mini player",
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -571,16 +569,16 @@ fun PlayerScreen(
                     // Bottom-right corner Fullscreen button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
-                        enter = fadeIn(tween(180)),
-                        exit = fadeOut(tween(220)),
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(200)),
                         modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
                         IconButton(
                             onClick = enterFullscreen,
                             modifier = Modifier
-                                .padding(8.dp)
-                                .size(42.dp)
-                                .background(Color(0x66000000), CircleShape)
+                                .padding(10.dp)
+                                .size(44.dp)
+                                .background(Color(0x77000000), CircleShape)
                                 .testTag("player_corner_fullscreen_button")
                         ) {
                             Icon(

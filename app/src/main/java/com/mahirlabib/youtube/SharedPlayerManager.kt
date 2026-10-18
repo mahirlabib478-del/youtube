@@ -436,7 +436,6 @@ object SharedPlayerManager {
                         try {
                             var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
                             if (data && data.event === 'infoDelivery' && data.info) {
-                                notifyInteraction();
                                 var state = data.info.playerState;
                                 if (state === 1) { // Playing
                                     userWantsPlay = true;

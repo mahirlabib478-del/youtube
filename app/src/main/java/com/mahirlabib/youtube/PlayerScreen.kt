@@ -188,9 +188,15 @@ fun PlayerScreen(
     // keep corner controls visible during interaction, then hide after inactivity.
     LaunchedEffect(
         showControls, videoId, isFullscreenExpanded,
-        playerControlInteractions, SharedPlayerManager.hasPlaybackStarted
+        playerControlInteractions, SharedPlayerManager.hasPlaybackStarted,
+        SharedPlayerManager.isPlaying
     ) {
         if (showControls) {
+            // While paused, YouTube normally keeps its playback overlay visible.
+            // Don't separately fade the app's Back/Fullscreen buttons away.
+            if (SharedPlayerManager.hasPlaybackStarted && !SharedPlayerManager.isPlaying) {
+                return@LaunchedEffect
+            }
             if (PlayerControlsPolicy.waitForFirstPlayback(
                     SharedPlayerManager.hasPlaybackStarted,
                     playerControlInteractions > 0
@@ -199,6 +205,13 @@ fun PlayerScreen(
             }
             delay(3800L)
             showControls = false
+        }
+    }
+
+    // Keep app-owned corner buttons visible with YouTube's paused overlay.
+    LaunchedEffect(SharedPlayerManager.isPlaying, SharedPlayerManager.hasPlaybackStarted) {
+        if (!SharedPlayerManager.isPlaying && SharedPlayerManager.hasPlaybackStarted) {
+            showControls = true
         }
     }
 

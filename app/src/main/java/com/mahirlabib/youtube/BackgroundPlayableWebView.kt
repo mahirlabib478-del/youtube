@@ -16,7 +16,7 @@ class BackgroundPlayableWebView @JvmOverloads constructor(
     defStyleAttr: Int = 0
 ) : WebView(context, attrs, defStyleAttr) {
 
-    var isBackgroundAudioActive: Boolean = true
+    var isBackgroundAudioActive: Boolean = false
 
     override fun getWindowVisibility(): Int {
         return if (isBackgroundAudioActive) View.VISIBLE else super.getWindowVisibility()

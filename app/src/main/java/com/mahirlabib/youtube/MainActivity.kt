@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
     var isInPipMode by mutableStateOf(false)
         private set
 
+    private var resumeWhenForeground = false
+
     fun enterPipMode(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             return try {
@@ -129,15 +131,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         return false
-    }
-
-    override fun onUserLeaveHint() {
-        super.onUserLeaveHint()
-        // Automatically enter Picture-in-Picture mode when leaving the app while watching video
-        val video = SharedPlayerManager.currentVideo
-        if (video != null && (SharedPlayerManager.isPlaying || BackgroundAudioState.isRunning)) {
-            enterPipMode()
-        }
     }
 
     override fun onPictureInPictureModeChanged(
@@ -158,8 +151,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        val video = SharedPlayerManager.currentVideo
-        if (video != null && BackgroundAudioState.isRunning) {
+        val inPip = isInPictureInPictureMode || isInPipMode
+        val bgEnabled = BackgroundAudioState.isRunning
+        SharedPlayerManager.setAppInBackground(!inPip)
+        if (SharedPlayerManager.currentVideo == null) return
+
+        if (PlaybackLifecyclePolicy.shouldPauseWhenActivityStops(bgEnabled, inPip)) {
+            resumeWhenForeground = SharedPlayerManager.isPlaying
+            SharedPlayerManager.suspendWithoutBackgroundAudio()
+        } else if (bgEnabled) {
             SharedPlayerManager.ensureActive()
             SharedPlayerManager.checkAndResumeIfPaused()
         }
@@ -168,7 +168,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         SharedPlayerManager.ensureActive()
-        if (SharedPlayerManager.isPlaying || BackgroundAudioState.isPlaying) {
+        SharedPlayerManager.setAppInBackground(false)
+        val restorePlayback = resumeWhenForeground && SharedPlayerManager.currentVideo != null
+        resumeWhenForeground = false
+        if (restorePlayback || SharedPlayerManager.isPlaying || BackgroundAudioState.isPlaying) {
             SharedPlayerManager.resume()
         }
     }
@@ -757,8 +760,11 @@ private fun YouTubeApp() {
                             padding = padding,
                             relatedVideos = approvedVideos,
                             onClose = {
-                                if (isMiniPlayer) { activeVideo = null; isMiniPlayer = false }
-                                else isMiniPlayer = true
+                                if (isMiniPlayer) {
+                                    if (!BackgroundAudioState.isRunning) SharedPlayerManager.stop()
+                                    activeVideo = null
+                                    isMiniPlayer = false
+                                } else isMiniPlayer = true
                             },
                             onPlayRelated = { playVideo(it) },
                             onOpenChannel = { chId, chTitle, chAvatar ->

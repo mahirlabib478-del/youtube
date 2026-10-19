@@ -310,6 +310,7 @@ class BackgroundAudioService : Service() {
         stopHeartbeat()
         releaseLocks()
         BackgroundAudioState.isRunning = false
+        SharedPlayerManager.syncBackgroundAudioMode()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -349,6 +350,7 @@ class BackgroundAudioService : Service() {
             activeService = null
         }
         BackgroundAudioState.isRunning = false
+        SharedPlayerManager.syncBackgroundAudioMode()
         super.onDestroy()
     }
 

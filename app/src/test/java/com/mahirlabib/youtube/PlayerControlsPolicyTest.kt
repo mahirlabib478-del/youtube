@@ -28,6 +28,14 @@ class PlayerControlsPolicyTest {
     }
 
     @Test
+    fun fullscreenExitIgnoresRapidRepeatTapsDuringRotation() {
+        assertTrue(PlayerControlsPolicy.shouldHandleFullscreenButtonTap(1000L, 0L))
+        assertFalse(PlayerControlsPolicy.shouldHandleFullscreenButtonTap(1400L, 1000L))
+        assertTrue(PlayerControlsPolicy.shouldHandleFullscreenButtonTap(1700L, 1000L))
+        assertFalse(PlayerControlsPolicy.shouldHandleFullscreenButtonTap(900L, 1000L))
+    }
+
+    @Test
     fun horizontalAndVerticalSwipesDoNotTogglePlayerButtons() {
         assertFalse(PlayerControlsPolicy.isSimpleTap(45f, 1f, 200L, 24f))
         assertFalse(PlayerControlsPolicy.isSimpleTap(0f, 70f, 200L, 24f))

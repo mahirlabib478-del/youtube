@@ -61,7 +61,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -751,27 +750,6 @@ fun PlayerScreen(
                                         fontWeight = FontWeight.SemiBold,
                                         color = if (isThisVideoInBg) Color.White else MaterialTheme.colorScheme.onSurface
                                     )
-                                }
-                            }
-
-                            // PiP remains available as an explicit action, not on every Home press.
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                onClick = { (activity as? MainActivity)?.enterPipMode() },
-                                modifier = Modifier.testTag("pip_button")
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PictureInPictureAlt,
-                                        contentDescription = "Picture in picture",
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Text("PiP", style = MaterialTheme.typography.labelLarge)
                                 }
                             }
 

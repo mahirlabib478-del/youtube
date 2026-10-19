@@ -15,7 +15,7 @@ internal object PlayerControlsPolicy {
         durationMs in 0L..650L && kotlin.math.abs(deltaX) <= slopPx &&
             kotlin.math.abs(deltaY) <= slopPx
 
-    /** Avoid repeat clicks while portrait/landscape view hierarchy is rotating. */
-    fun shouldHandleFullscreenButtonTap(nowMs: Long, previousMs: Long): Boolean =
-        nowMs >= previousMs && (previousMs == 0L || nowMs - previousMs >= 650L)
+    /** The same bottom-right control must work with either fullscreen route. */
+    fun isFullscreenMode(expanded: Boolean, chromeCustomViewActive: Boolean): Boolean =
+        expanded || chromeCustomViewActive
 }

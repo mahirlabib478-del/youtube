@@ -40,6 +40,10 @@ object SharedPlayerManager {
     var currentVideo by mutableStateOf<YouTubeVideo?>(null)
     var isPlaying by mutableStateOf(false)
     var isControlsVisible by mutableStateOf(false)
+    // User intent is independent of OS lifecycle pauses and delayed iframe states.
+    var wasPausedByUser by mutableStateOf(false)
+        private set
+    private var pausedForLifecycle = false
     var hasPlaybackStarted by mutableStateOf(false)
         private set
     var playbackError by mutableStateOf<String?>(null)
@@ -109,6 +113,14 @@ object SharedPlayerManager {
                 Bridge(
                     onControlsChange = { visible -> isControlsVisible = visible },
                     onStateChange = { playing ->
+                        if (playing) {
+                            pausedForLifecycle = false
+                            wasPausedByUser = false
+                        } else if (!pausedForLifecycle) {
+                            // Only an actual iframe pause, not our onStop() pause,
+                            // represents a user's decision to stop playing.
+                            wasPausedByUser = true
+                        }
                         if (playing && !hasPlaybackStarted) {
                             hasPlaybackStarted = true
                             if (videoLoadStartedMs > 0L) {
@@ -266,7 +278,9 @@ object SharedPlayerManager {
 
     /** Stop ordinary playback on Home / screen-off without destroying the mini player. */
     fun suspendWithoutBackgroundAudio() {
-        pause()
+        // Temporarily pause without overwriting a previously chosen PLAY or PAUSE.
+        pausedForLifecycle = true
+        sendPauseCommand()
         sharedWebView?.let { wv ->
             wv.isBackgroundAudioActive = false
             wv.onPause()
@@ -291,6 +305,8 @@ object SharedPlayerManager {
         playbackError = null
 
         val wv = getOrCreateWebView(context)
+        wasPausedByUser = false
+        pausedForLifecycle = false
         if (!isSameVideo) {
             hasPlaybackStarted = false
             videoLoadStartedMs = SystemClock.elapsedRealtime()
@@ -307,6 +323,12 @@ object SharedPlayerManager {
     }
 
     fun pause() {
+        wasPausedByUser = true
+        pausedForLifecycle = false
+        sendPauseCommand()
+    }
+
+    private fun sendPauseCommand() {
         isPlaying = false
         BackgroundAudioState.isPlaying = false
         BackgroundAudioService.activeService?.updateNotification()
@@ -334,6 +356,8 @@ object SharedPlayerManager {
     }
 
     fun resume() {
+        wasPausedByUser = false
+        pausedForLifecycle = false
         isPlaying = true
         BackgroundAudioState.isPlaying = true
         BackgroundAudioService.activeService?.updateNotification()
@@ -408,6 +432,8 @@ object SharedPlayerManager {
 
     fun stop() {
         isAppInBackground = false
+        wasPausedByUser = false
+        pausedForLifecycle = false
         isPlaying = false
         currentVideo = null
         hasPlaybackStarted = false
@@ -524,6 +550,9 @@ object SharedPlayerManager {
                     window.seekBy = seekBy;
 
                     iframe.onload = function() {
+                        // Passive state listener supplements infoDelivery so a
+                        // pause from YouTube's own controls reaches Android sooner.
+                        postCmd('addEventListener', ['onStateChange']);
                         try {
                             var idoc = iframe.contentDocument || iframe.contentWindow.document;
                             if (idoc) {
@@ -544,11 +573,17 @@ object SharedPlayerManager {
                     window.addEventListener('message', function(event) {
                         try {
                             var data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                            var state = null;
                             if (data && data.event === 'infoDelivery' && data.info) {
                                 if (typeof data.info.currentTime === 'number') {
                                     currentTime = data.info.currentTime;
                                 }
-                                var state = data.info.playerState;
+                                state = data.info.playerState;
+                            } else if (data && data.event === 'onStateChange') {
+                                // YouTube iframe's state-change notification.
+                                state = typeof data.info === 'number' ? data.info : null;
+                            }
+                            if (typeof state === 'number') {
                                 if (state === 1) { // Playing
                                     userWantsPlay = true;
                                     try { AndroidBridge.onPlayerStateChanged(true); } catch(e) {}

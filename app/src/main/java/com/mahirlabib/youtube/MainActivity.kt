@@ -156,8 +156,16 @@ class MainActivity : ComponentActivity() {
         SharedPlayerManager.setAppInBackground(!inPip)
         if (SharedPlayerManager.currentVideo == null) return
 
+        // Snapshot the verified playback state *before* the lifecycle pause.
+        // A YouTube pause tapped by the user must never be undone on return.
+        resumeWhenForeground = PlaybackResumePolicy.shouldRestoreOnReturn(
+            SharedPlayerManager.isPlaying,
+            SharedPlayerManager.hasPlaybackStarted,
+            SharedPlayerManager.wasPausedByUser,
+            bgEnabled,
+            inPip
+        )
         if (PlaybackLifecyclePolicy.shouldPauseWhenActivityStops(bgEnabled, inPip)) {
-            resumeWhenForeground = SharedPlayerManager.isPlaying
             SharedPlayerManager.suspendWithoutBackgroundAudio()
         } else if (bgEnabled) {
             SharedPlayerManager.ensureActive()
@@ -169,9 +177,14 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         SharedPlayerManager.ensureActive()
         SharedPlayerManager.setAppInBackground(false)
-        val restorePlayback = resumeWhenForeground && SharedPlayerManager.currentVideo != null
+        // Do not treat a stale 'isPlaying' flag as permission to autoplay.
+        // BackgroundAudioService owns the separate opt-in BG playback flow.
+        val restorePlayback = resumeWhenForeground &&
+            SharedPlayerManager.currentVideo != null &&
+            !SharedPlayerManager.wasPausedByUser &&
+            !BackgroundAudioState.isRunning
         resumeWhenForeground = false
-        if (restorePlayback || SharedPlayerManager.isPlaying || BackgroundAudioState.isPlaying) {
+        if (restorePlayback) {
             SharedPlayerManager.resume()
         }
     }

@@ -152,6 +152,8 @@ fun PlayerScreen(
         isFullscreenExpanded, awaitingPortraitAfterExit, landscape
     )
     var showControls by remember(videoId) { mutableStateOf(true) }
+    // A deliberate hide while paused must survive later player state callbacks.
+    var manuallyHiddenWhilePaused by remember(videoId) { mutableStateOf(false) }
     var playerControlInteractions by remember(videoId) { mutableIntStateOf(0) }
 
     val exitFullscreen: () -> Unit = {
@@ -192,38 +194,43 @@ fun PlayerScreen(
         if (PlayerControlsPolicy.shouldToggle(now, lastInteractionTime)) {
             lastInteractionTime = now
             playerControlInteractions++
-            showControls = !showControls
+            val nextVisible = !showControls
+            manuallyHiddenWhilePaused = !SharedPlayerManager.isPlaying && !nextVisible
+            showControls = nextVisible
         }
     }
 
-    // Do not hide the native corner buttons before a slow first iframe playback.
-    // YouTube does not expose inner control visibility across the iframe boundary;
-    // keep corner controls visible during interaction, then hide after inactivity.
+    // YouTube's cross-origin iframe does not expose its controls' real visibility.
+    // Use one native tap state with a shorter best-effort inactivity timeout.
+    // Cancel the timeout when the player pauses; taps must still toggle in pause.
     LaunchedEffect(
         showControls, videoId, isFullscreenExpanded,
         playerControlInteractions, SharedPlayerManager.hasPlaybackStarted,
         SharedPlayerManager.isPlaying
     ) {
-        if (showControls) {
-            // While paused, YouTube normally keeps its playback overlay visible.
-            // Don't separately fade the app's Back/Fullscreen buttons away.
-            if (SharedPlayerManager.hasPlaybackStarted && !SharedPlayerManager.isPlaying) {
-                return@LaunchedEffect
-            }
+        if (PlayerControlsPolicy.shouldAutoHide(
+                SharedPlayerManager.isPlaying, showControls
+            )) {
             if (PlayerControlsPolicy.waitForFirstPlayback(
                     SharedPlayerManager.hasPlaybackStarted,
                     playerControlInteractions > 0
                 )) {
                 delay(8000L) // Bound the wait if the video cannot start.
             }
-            delay(3800L)
-            showControls = false
+            delay(PlayerControlsPolicy.AUTO_HIDE_DELAY_MS)
+            if (SharedPlayerManager.isPlaying) showControls = false
         }
     }
 
-    // Keep app-owned corner buttons visible with YouTube's paused overlay.
+    // Reveal once when a video enters PAUSED, but never overwrite a user's
+    // subsequent tap-to-hide while paused. No paused-state auto-hide timer runs.
     LaunchedEffect(SharedPlayerManager.isPlaying, SharedPlayerManager.hasPlaybackStarted) {
-        if (!SharedPlayerManager.isPlaying && SharedPlayerManager.hasPlaybackStarted) {
+        if (SharedPlayerManager.isPlaying) {
+            manuallyHiddenWhilePaused = false
+        } else if (PlayerControlsPolicy.shouldRevealOnPause(
+                SharedPlayerManager.hasPlaybackStarted,
+                manuallyHiddenWhilePaused
+            )) {
             showControls = true
         }
     }

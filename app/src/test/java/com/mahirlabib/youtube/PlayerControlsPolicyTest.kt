@@ -28,6 +28,27 @@ class PlayerControlsPolicyTest {
     }
 
     @Test
+    fun cornerButtonsDoNotAutoHideDuringPause() {
+        assertFalse(PlayerControlsPolicy.shouldAutoHide(false, true))
+        assertFalse(PlayerControlsPolicy.shouldAutoHide(false, false))
+        assertTrue(PlayerControlsPolicy.shouldAutoHide(true, true))
+        assertFalse(PlayerControlsPolicy.shouldAutoHide(true, false))
+    }
+
+    @Test
+    fun pauseRevealRespectsExplicitHideAndDoesNotRequirePlaybackRestart() {
+        assertTrue(PlayerControlsPolicy.shouldRevealOnPause(true, false))
+        assertFalse(PlayerControlsPolicy.shouldRevealOnPause(true, true))
+        assertFalse(PlayerControlsPolicy.shouldRevealOnPause(false, false))
+    }
+
+    @Test
+    fun nativeAutoHideTimeIsBoundedBelowPreviousDelay() {
+        assertTrue(PlayerControlsPolicy.AUTO_HIDE_DELAY_MS > 0L)
+        assertTrue(PlayerControlsPolicy.AUTO_HIDE_DELAY_MS < 3800L)
+    }
+
+    @Test
     fun horizontalAndVerticalSwipesDoNotTogglePlayerButtons() {
         assertFalse(PlayerControlsPolicy.isSimpleTap(45f, 1f, 200L, 24f))
         assertFalse(PlayerControlsPolicy.isSimpleTap(0f, 70f, 200L, 24f))

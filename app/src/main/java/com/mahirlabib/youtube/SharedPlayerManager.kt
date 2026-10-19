@@ -20,6 +20,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -39,7 +40,11 @@ object SharedPlayerManager {
     var currentVideo by mutableStateOf<YouTubeVideo?>(null)
     var isPlaying by mutableStateOf(false)
     var isControlsVisible by mutableStateOf(false)
+    var hasPlaybackStarted by mutableStateOf(false)
+        private set
     var playbackError by mutableStateOf<String?>(null)
+
+    private var videoLoadStartedMs: Long = 0L
 
     // Only recover involuntary pauses after the app leaves the foreground with BG audio enabled.
     private var isAppInBackground = false
@@ -104,6 +109,12 @@ object SharedPlayerManager {
                 Bridge(
                     onControlsChange = { visible -> isControlsVisible = visible },
                     onStateChange = { playing ->
+                        if (playing && !hasPlaybackStarted) {
+                            hasPlaybackStarted = true
+                            if (videoLoadStartedMs > 0L) {
+                                Log.d(TAG, "YouTube first PLAYING state after ${SystemClock.elapsedRealtime() - videoLoadStartedMs} ms")
+                            }
+                        }
                         isPlaying = playing
                         BackgroundAudioState.isPlaying = playing
                         BackgroundAudioService.activeService?.updateNotification()
@@ -211,8 +222,10 @@ object SharedPlayerManager {
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
             )
+            // Only resume the WebView on an actual re-attach. Recomposition
+            // of the corner controls should not repeatedly call onResume().
+            ensureActive()
         }
-        ensureActive()
     }
 
     /**
@@ -279,6 +292,8 @@ object SharedPlayerManager {
 
         val wv = getOrCreateWebView(context)
         if (!isSameVideo) {
+            hasPlaybackStarted = false
+            videoLoadStartedMs = SystemClock.elapsedRealtime()
             loadEmbedPlayer(wv, video.videoId)
         } else {
             resume()
@@ -395,6 +410,8 @@ object SharedPlayerManager {
         isAppInBackground = false
         isPlaying = false
         currentVideo = null
+        hasPlaybackStarted = false
+        videoLoadStartedMs = 0L
         playbackError = null
         BackgroundAudioState.isRunning = false
         BackgroundAudioState.isPlaying = false

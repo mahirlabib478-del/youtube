@@ -41,6 +41,9 @@ object SharedPlayerManager {
     var isControlsVisible by mutableStateOf(false)
     var playbackError by mutableStateOf<String?>(null)
 
+    // Only recover involuntary pauses after the app leaves the foreground with BG audio enabled.
+    private var isAppInBackground = false
+
     // User interaction callback for 1:1 control synchronization
     var onUserInteraction: (() -> Unit)? = null
 
@@ -217,9 +220,43 @@ object SharedPlayerManager {
      */
     fun ensureActive() {
         sharedWebView?.let { wv ->
-            wv.isBackgroundAudioActive = true
+            wv.isBackgroundAudioActive =
+                PlaybackLifecyclePolicy.shouldKeepWebViewActive(BackgroundAudioState.isRunning)
             wv.resumeTimers()
             wv.onResume()
+        }
+    }
+
+    /**
+     * Foreground playback stays normal. Background recovery is allowed only while the
+     * explicitly requested background-audio service is running outside of PiP.
+     */
+    fun setAppInBackground(background: Boolean) {
+        isAppInBackground = background
+        val allowRecovery = PlaybackLifecyclePolicy.shouldRecoverPlayback(
+            BackgroundAudioState.isRunning, background
+        )
+        sharedWebView?.evaluateJavascript(
+            "window.setBackgroundResumeAllowed && window.setBackgroundResumeAllowed($allowRecovery);",
+            null
+        )
+    }
+
+    /** Synchronize an existing WebView when the user turns background audio on or off. */
+    fun syncBackgroundAudioMode() {
+        sharedWebView?.isBackgroundAudioActive = BackgroundAudioState.isRunning
+        setAppInBackground(isAppInBackground)
+        if (isAppInBackground && !BackgroundAudioState.isRunning) {
+            suspendWithoutBackgroundAudio()
+        }
+    }
+
+    /** Stop ordinary playback on Home / screen-off without destroying the mini player. */
+    fun suspendWithoutBackgroundAudio() {
+        pause()
+        sharedWebView?.let { wv ->
+            wv.isBackgroundAudioActive = false
+            wv.onPause()
         }
     }
 
@@ -331,6 +368,9 @@ object SharedPlayerManager {
      * If user wants audio and player was suspended by OS backgrounding, resumes it immediately.
      */
     fun checkAndResumeIfPaused() {
+        if (!PlaybackLifecyclePolicy.shouldRecoverPlayback(
+                BackgroundAudioState.isRunning, isAppInBackground
+            )) return
         if (!isPlaying && !BackgroundAudioState.isPlaying) return
         sharedWebView?.let { wv ->
             ensureActive()
@@ -352,6 +392,7 @@ object SharedPlayerManager {
     }
 
     fun stop() {
+        isAppInBackground = false
         isPlaying = false
         currentVideo = null
         playbackError = null
@@ -412,7 +453,12 @@ object SharedPlayerManager {
                 <script>
                     var iframe = document.getElementById('yt-embed');
                     var userWantsPlay = true;
+                    var backgroundResumeAllowed = false;
                     var currentTime = 0;
+
+                    window.setBackgroundResumeAllowed = function(enabled) {
+                        backgroundResumeAllowed = !!enabled;
+                    };
 
                     function notifyInteraction() {
                         try { AndroidBridge.onUserTapped(); } catch(e) {}
@@ -490,13 +536,15 @@ object SharedPlayerManager {
                                     userWantsPlay = true;
                                     try { AndroidBridge.onPlayerStateChanged(true); } catch(e) {}
                                 } else if (state === 2) { // Paused
-                                    if (!userWantsPlay) {
-                                        try { AndroidBridge.onPlayerStateChanged(false); } catch(e) {}
-                                    } else {
-                                        // Unsolicited pause while user wants audio - resume immediately
+                                    if (backgroundResumeAllowed && userWantsPlay) {
+                                        // OS suspension during explicitly enabled BG playback.
                                         setTimeout(function() {
-                                            if (userWantsPlay) play();
+                                            if (backgroundResumeAllowed && userWantsPlay) play();
                                         }, 50);
+                                    } else {
+                                        // Respect pauses from the embedded player controls.
+                                        userWantsPlay = false;
+                                        try { AndroidBridge.onPlayerStateChanged(false); } catch(e) {}
                                     }
                                 } else if (state === 0) { // Ended
                                     userWantsPlay = false;

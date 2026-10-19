@@ -14,4 +14,8 @@ internal object PlayerControlsPolicy {
     fun isSimpleTap(deltaX: Float, deltaY: Float, durationMs: Long, slopPx: Float): Boolean =
         durationMs in 0L..650L && kotlin.math.abs(deltaX) <= slopPx &&
             kotlin.math.abs(deltaY) <= slopPx
+
+    /** Avoid repeat clicks while portrait/landscape view hierarchy is rotating. */
+    fun shouldHandleFullscreenButtonTap(nowMs: Long, previousMs: Long): Boolean =
+        nowMs >= previousMs && (previousMs == 0L || nowMs - previousMs >= 650L)
 }

@@ -137,10 +137,10 @@ fun PlayerScreen(
     val videoId = video.videoId
 
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
-    var resumeTrigger by remember(videoId) { mutableIntStateOf(0) }
     var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var showControls by remember(videoId) { mutableStateOf(true) }
+    var playerControlInteractions by remember(videoId) { mutableIntStateOf(0) }
 
     val exitFullscreen: () -> Unit = {
         val cb = customViewCallback
@@ -167,23 +167,37 @@ fun PlayerScreen(
 
     val enterFullscreen: () -> Unit = {
         isFullscreenExpanded = true
-        resumeTrigger++
         showControls = true
     }
 
-    var lastInteractionTime by remember { mutableLongStateOf(0L) }
-    val toggleControls = {
+    // Multiple Android/Compose touch observers can report the same tap.
+    // Reveal instead of toggling to avoid hiding corner buttons while the user
+    // is interacting with the embedded (cross-origin) YouTube controls.
+    var lastInteractionTime by remember(videoId) { mutableLongStateOf(0L) }
+    val revealControls = {
         val now = System.currentTimeMillis()
-        if (now - lastInteractionTime > 350) {
+        if (now - lastInteractionTime >= 220L) {
             lastInteractionTime = now
-            showControls = !showControls
+            playerControlInteractions++
+            showControls = true
         }
     }
 
-    // Auto-hide controls together after 3.8 seconds of inactivity
-    LaunchedEffect(showControls, videoId, isFullscreenExpanded) {
+    // Do not hide the native corner buttons before a slow first iframe playback.
+    // YouTube does not expose inner control visibility across the iframe boundary;
+    // keep corner controls visible during interaction, then hide after inactivity.
+    LaunchedEffect(
+        showControls, videoId, isFullscreenExpanded,
+        playerControlInteractions, SharedPlayerManager.hasPlaybackStarted
+    ) {
         if (showControls) {
-            delay(3800)
+            if (PlayerControlsPolicy.waitForFirstPlayback(
+                    SharedPlayerManager.hasPlaybackStarted,
+                    playerControlInteractions > 0
+                )) {
+                delay(8000L) // Bound the wait if the video cannot start.
+            }
+            delay(3800L)
             showControls = false
         }
     }
@@ -191,7 +205,7 @@ fun PlayerScreen(
     // 1:1 synchronization with YouTube player's touch interaction
     DisposableEffect(videoId) {
         SharedPlayerManager.onUserInteraction = {
-            toggleControls()
+            revealControls()
         }
         onDispose {
             SharedPlayerManager.onUserInteraction = null
@@ -211,10 +225,9 @@ fun PlayerScreen(
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             insetsController.show(WindowInsetsCompat.Type.systemBars())
         }
-        delay(60)
-        resumeTrigger++
-        delay(200)
-        resumeTrigger++
+        // The same WebView stays attached; forcing play twice here could
+        // unpause a deliberately paused video and disturb initial buffering.
+        SharedPlayerManager.ensureActive()
     }
 
     DisposableEffect(activity, videoId) {
@@ -393,7 +406,7 @@ fun PlayerScreen(
                                             }
                                             if (!change.pressed) {
                                                 if (!hasSwipedDown && !hasMoved) {
-                                                    toggleControls()
+                                                    revealControls()
                                                 }
                                                 break
                                             }
@@ -407,7 +420,6 @@ fun PlayerScreen(
                         videoId = videoId,
                         modifier = Modifier.fillMaxSize(),
                         autoplay = !isThisVideoInBg,
-                        resumeTrigger = resumeTrigger,
                         onShowCustomView = { view, callback ->
                             customFullscreenView = view
                             customViewCallback = callback

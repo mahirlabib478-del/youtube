@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -22,6 +23,8 @@ import androidx.core.content.ContextCompat
 import kotlin.math.absoluteValue
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -98,6 +101,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -140,10 +144,18 @@ fun PlayerScreen(
     var isFullscreenExpanded by remember(videoId) { mutableStateOf(false) }
     var customFullscreenView by remember(videoId) { mutableStateOf<View?>(null) }
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    // Keep the video at its previous size while Android is physically rotating.
+    // This prevents a transient portrait fullscreen followed by another resize.
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var awaitingPortraitAfterExit by remember(videoId) { mutableStateOf(false) }
+    val fullscreenLayoutActive = FullscreenTransitionPolicy.useFullscreenLayout(
+        isFullscreenExpanded, awaitingPortraitAfterExit, landscape
+    )
     var showControls by remember(videoId) { mutableStateOf(true) }
     var playerControlInteractions by remember(videoId) { mutableIntStateOf(0) }
 
     val exitFullscreen: () -> Unit = {
+        awaitingPortraitAfterExit = landscape && (isFullscreenExpanded || customFullscreenView != null)
         val cb = customViewCallback
         val v = customFullscreenView
         customFullscreenView = null
@@ -227,21 +239,35 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(isFullscreenExpanded) {
-        val window = activity?.window ?: return@LaunchedEffect
-        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        val host = activity ?: return@LaunchedEffect
         showControls = true
-        if (isFullscreenExpanded) {
-            insetsController.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Ask Android to rotate first; don't expand a portrait WebView to full
+        // screen and then resize it again after the configuration changes.
+        host.requestedOrientation = if (isFullscreenExpanded) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            insetsController.show(WindowInsetsCompat.Type.systemBars())
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
-        // The same WebView stays attached; forcing play twice here could
-        // unpause a deliberately paused video and disturb initial buffering.
+        // Preserve the persistent WebView; never call playVideo()/resume() here.
         SharedPlayerManager.ensureActive()
+    }
+
+    LaunchedEffect(isFullscreenExpanded, landscape) {
+        val window = activity?.window ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        // Change window insets only in the destination orientation to avoid
+        // two rapid viewport resizes and black flashes mid-rotation.
+        if (FullscreenTransitionPolicy.hideSystemBars(isFullscreenExpanded, landscape)) {
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else if (FullscreenTransitionPolicy.showSystemBars(isFullscreenExpanded, landscape)) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    LaunchedEffect(landscape, awaitingPortraitAfterExit) {
+        if (!landscape && awaitingPortraitAfterExit) awaitingPortraitAfterExit = false
     }
 
     DisposableEffect(activity, videoId) {
@@ -376,7 +402,7 @@ fun PlayerScreen(
             modifier
                 .fillMaxSize()
                 .then(
-                    if (isFullscreenExpanded) Modifier.background(Color.Black)
+                    if (fullscreenLayoutActive) Modifier.background(Color.Black)
                     else Modifier.padding(padding).background(MaterialTheme.colorScheme.background)
                 )
                 .testTag("player_screen")
@@ -385,14 +411,16 @@ fun PlayerScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = if (isFullscreenExpanded || miniMode) {
+                modifier = (if (fullscreenLayoutActive || miniMode) {
                     Modifier.fillMaxSize()
                         .clip(if (miniMode) RoundedCornerShape(12.dp) else RoundedCornerShape(0.dp))
                         .clipToBounds()
                         .background(Color.Black)
                 } else {
                     Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
-                }
+                }).animateContentSize(
+                    animationSpec = tween(durationMillis = 190, easing = FastOutSlowInEasing)
+                )
             ) {
                 // Video player layer with gesture detection for tapping and swiping down
                 Box(
@@ -446,6 +474,7 @@ fun PlayerScreen(
                             val v = customFullscreenView
                             customFullscreenView = null
                             customViewCallback = null
+                            awaitingPortraitAfterExit = landscape
                             isFullscreenExpanded = false
                             showControls = true
                             if (v != null) {
@@ -487,7 +516,7 @@ fun PlayerScreen(
                     }
                 }
 
-                if (isFullscreenExpanded || customFullscreenView != null) {
+                if (fullscreenLayoutActive) {
                     // Fullscreen Top-left Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
@@ -538,7 +567,7 @@ fun PlayerScreen(
                 }
 
                 // Portrait 16:9 Controls overlay: Synchronized back and fullscreen buttons
-                if (!isFullscreenExpanded && !miniMode) {
+                if (!fullscreenLayoutActive && !miniMode) {
                     // Top-left corner Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
@@ -589,7 +618,7 @@ fun PlayerScreen(
                 }
             }
 
-            if (!isFullscreenExpanded && !miniMode) {
+            if (!fullscreenLayoutActive && !miniMode) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()

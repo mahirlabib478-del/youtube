@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
+import kotlin.math.abs
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
@@ -102,11 +103,41 @@ object SharedPlayerManager {
             )
             setBackgroundColor(AndroidColor.BLACK)
 
+            // Capture only a completed tap. Forward every MotionEvent unchanged
+            // to the iframe, preserving seek, drag, double-tap and player buttons.
+            var touchStartX = 0f
+            var touchStartY = 0f
+            var touchStartTime = 0L
+            var trackingTap = false
+            val tapSlopPx = 24f * resources.displayMetrics.density
             setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_UP) {
-                    onUserInteraction?.invoke()
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchStartX = event.x
+                        touchStartY = event.y
+                        touchStartTime = event.eventTime
+                        trackingTap = true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (abs(event.x - touchStartX) > tapSlopPx ||
+                            abs(event.y - touchStartY) > tapSlopPx) {
+                            trackingTap = false
+                        }
+                    }
+                    MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_CANCEL -> {
+                        trackingTap = false
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (trackingTap && PlayerControlsPolicy.isSimpleTap(
+                                event.x - touchStartX, event.y - touchStartY,
+                                event.eventTime - touchStartTime, tapSlopPx
+                            )) {
+                            onUserInteraction?.invoke()
+                        }
+                        trackingTap = false
+                    }
                 }
-                false
+                false // Never consume: YouTube still gets the original input.
             }
 
             addJavascriptInterface(
@@ -503,13 +534,9 @@ object SharedPlayerManager {
                         backgroundResumeAllowed = !!enabled;
                     };
 
-                    function notifyInteraction() {
-                        try { AndroidBridge.onUserTapped(); } catch(e) {}
-                    }
-
-                    window.addEventListener('touchstart', notifyInteraction, { passive: true });
-                    window.addEventListener('click', notifyInteraction, { passive: true });
-                    window.addEventListener('pointerup', notifyInteraction, { passive: true });
+                    // Native WebView OnTouchListener provides the single tap source.
+                    // Do not also report DOM click/touch/pointer events: they would
+                    // double-toggle the native Back/Fullscreen buttons.
 
                     function postCmd(func, args) {
                         try {

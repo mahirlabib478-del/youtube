@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -170,16 +171,16 @@ fun PlayerScreen(
         showControls = true
     }
 
-    // Multiple Android/Compose touch observers can report the same tap.
-    // Reveal instead of toggling to avoid hiding corner buttons while the user
-    // is interacting with the embedded (cross-origin) YouTube controls.
+    // The WebView owns the only tap callback. A tap alternates these two
+    // app-owned buttons in the same way the YouTube iframe toggles its controls.
+    // Ignore very close duplicate events (and YouTube's double-tap seek).
     var lastInteractionTime by remember(videoId) { mutableLongStateOf(0L) }
-    val revealControls = {
-        val now = System.currentTimeMillis()
-        if (now - lastInteractionTime >= 220L) {
+    val toggleCornerControls = {
+        val now = SystemClock.elapsedRealtime()
+        if (PlayerControlsPolicy.shouldToggle(now, lastInteractionTime)) {
             lastInteractionTime = now
             playerControlInteractions++
-            showControls = true
+            showControls = !showControls
         }
     }
 
@@ -215,10 +216,10 @@ fun PlayerScreen(
         }
     }
 
-    // 1:1 synchronization with YouTube player's touch interaction
+    // The native WebView receives iframe taps without intercepting player events.
     DisposableEffect(videoId) {
         SharedPlayerManager.onUserInteraction = {
-            revealControls()
+            toggleCornerControls()
         }
         onDispose {
             SharedPlayerManager.onUserInteraction = null
@@ -418,8 +419,10 @@ fun PlayerScreen(
                                                 break
                                             }
                                             if (!change.pressed) {
-                                                if (!hasSwipedDown && !hasMoved) {
-                                                    revealControls()
+                                                if (!hasSwipedDown && !hasMoved && customFullscreenView != null) {
+                                                    // Chrome custom fullscreen view is not the shared WebView;
+                                                    // use the parent touch observer only in that special mode.
+                                                    toggleCornerControls()
                                                 }
                                                 break
                                             }

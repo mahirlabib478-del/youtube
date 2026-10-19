@@ -143,8 +143,9 @@ fun PlayerScreen(
     var showControls by remember(videoId) { mutableStateOf(true) }
     var playerControlInteractions by remember(videoId) { mutableIntStateOf(0) }
     // Keep one bottom-right control alive across rotation and fullscreen changes.
-    val isPlayerFullscreen = isFullscreenExpanded || customFullscreenView != null
-    var lastFullscreenButtonTapTime by remember(videoId) { mutableLongStateOf(0L) }
+    val isPlayerFullscreen = PlayerControlsPolicy.isFullscreenMode(
+        isFullscreenExpanded, customFullscreenView != null
+    )
 
     val exitFullscreen: () -> Unit = {
         val cb = customViewCallback
@@ -556,14 +557,10 @@ fun PlayerScreen(
                     ) {
                         IconButton(
                             onClick = {
-                                val now = SystemClock.elapsedRealtime()
-                                if (PlayerControlsPolicy.shouldHandleFullscreenButtonTap(
-                                        now, lastFullscreenButtonTapTime
-                                    )) {
-                                    lastFullscreenButtonTapTime = now
-                                    if (isPlayerFullscreen) exitFullscreen()
-                                    else enterFullscreen()
-                                }
+                                // Never discard a deliberate tap due to a time-based
+                                // cooldown; the same stable button handles both modes.
+                                if (isPlayerFullscreen) exitFullscreen()
+                                else enterFullscreen()
                             },
                             modifier = Modifier
                                 .padding(12.dp)

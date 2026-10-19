@@ -142,6 +142,10 @@ fun PlayerScreen(
     var customViewCallback by remember(videoId) { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
     var showControls by remember(videoId) { mutableStateOf(true) }
     var playerControlInteractions by remember(videoId) { mutableIntStateOf(0) }
+    // Keep one bottom-right control alive across rotation and fullscreen changes.
+    val isPlayerFullscreen = PlayerControlsPolicy.isFullscreenMode(
+        isFullscreenExpanded, customFullscreenView != null
+    )
 
     val exitFullscreen: () -> Unit = {
         val cb = customViewCallback
@@ -385,7 +389,7 @@ fun PlayerScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             // Embedded Player Container - Seamlessly transitions between 16:9 and Fullscreen
             Box(
-                modifier = if (isFullscreenExpanded || miniMode) {
+                modifier = if (isPlayerFullscreen || miniMode) {
                     Modifier.fillMaxSize()
                         .clip(if (miniMode) RoundedCornerShape(12.dp) else RoundedCornerShape(0.dp))
                         .clipToBounds()
@@ -487,7 +491,7 @@ fun PlayerScreen(
                     }
                 }
 
-                if (isFullscreenExpanded || customFullscreenView != null) {
+                if (isPlayerFullscreen) {
                     // Fullscreen Top-left Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
@@ -512,33 +516,10 @@ fun PlayerScreen(
                         }
                     }
 
-                    // Bottom-right floating exit button when fullscreen controls are revealed
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showControls,
-                        enter = fadeIn(tween(200)),
-                        exit = fadeOut(tween(200)),
-                        modifier = Modifier.align(Alignment.BottomEnd)
-                    ) {
-                        IconButton(
-                            onClick = exitFullscreen,
-                            modifier = Modifier
-                                .padding(18.dp)
-                                .size(48.dp)
-                                .background(Color(0x77000000), CircleShape)
-                                .testTag("fullscreen_bottom_exit_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.FullscreenExit,
-                                contentDescription = "Exit Fullscreen",
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
                 }
 
                 // Portrait 16:9 Controls overlay: Synchronized back and fullscreen buttons
-                if (!isFullscreenExpanded && !miniMode) {
+                if (!isPlayerFullscreen && !miniMode) {
                     // Top-left corner Back button
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
@@ -563,7 +544,11 @@ fun PlayerScreen(
                         }
                     }
 
-                    // Bottom-right corner Fullscreen button
+                }
+
+                // One stable hit target in both orientations: swapping two
+                // different buttons during rotation caused flicker and lost taps.
+                if (!miniMode || isPlayerFullscreen) {
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showControls,
                         enter = fadeIn(tween(200)),
@@ -571,18 +556,28 @@ fun PlayerScreen(
                         modifier = Modifier.align(Alignment.BottomEnd)
                     ) {
                         IconButton(
-                            onClick = enterFullscreen,
+                            onClick = {
+                                // Never discard a deliberate tap due to a time-based
+                                // cooldown; the same stable button handles both modes.
+                                if (isPlayerFullscreen) exitFullscreen()
+                                else enterFullscreen()
+                            },
                             modifier = Modifier
-                                .padding(10.dp)
-                                .size(44.dp)
+                                .padding(12.dp)
+                                .size(48.dp)
                                 .background(Color(0x77000000), CircleShape)
-                                .testTag("player_corner_fullscreen_button")
+                                .testTag(
+                                    if (isPlayerFullscreen) "fullscreen_bottom_exit_button"
+                                    else "player_corner_fullscreen_button"
+                                )
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Fullscreen,
-                                contentDescription = "Fullscreen",
+                                imageVector = if (isPlayerFullscreen) Icons.Default.FullscreenExit
+                                    else Icons.Default.Fullscreen,
+                                contentDescription = if (isPlayerFullscreen) "Exit Fullscreen"
+                                    else "Fullscreen",
                                 tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }

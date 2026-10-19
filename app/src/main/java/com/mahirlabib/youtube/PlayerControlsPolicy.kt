@@ -14,4 +14,8 @@ internal object PlayerControlsPolicy {
     fun isSimpleTap(deltaX: Float, deltaY: Float, durationMs: Long, slopPx: Float): Boolean =
         durationMs in 0L..650L && kotlin.math.abs(deltaX) <= slopPx &&
             kotlin.math.abs(deltaY) <= slopPx
+
+    /** The same bottom-right control must work with either fullscreen route. */
+    fun isFullscreenMode(expanded: Boolean, chromeCustomViewActive: Boolean): Boolean =
+        expanded || chromeCustomViewActive
 }

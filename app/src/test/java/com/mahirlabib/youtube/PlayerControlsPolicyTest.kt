@@ -28,6 +28,14 @@ class PlayerControlsPolicyTest {
     }
 
     @Test
+    fun fullscreenExitIsAvailableForNativeAndChromeFullscreenModes() {
+        assertTrue(PlayerControlsPolicy.isFullscreenMode(true, false))
+        assertTrue(PlayerControlsPolicy.isFullscreenMode(false, true))
+        assertTrue(PlayerControlsPolicy.isFullscreenMode(true, true))
+        assertFalse(PlayerControlsPolicy.isFullscreenMode(false, false))
+    }
+
+    @Test
     fun horizontalAndVerticalSwipesDoNotTogglePlayerButtons() {
         assertFalse(PlayerControlsPolicy.isSimpleTap(45f, 1f, 200L, 24f))
         assertFalse(PlayerControlsPolicy.isSimpleTap(0f, 70f, 200L, 24f))
